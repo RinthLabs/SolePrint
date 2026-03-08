@@ -4,114 +4,110 @@ export function downloadTemplate() {
   const doc = new jsPDF({ unit: 'mm', format: 'letter' })
   const pageW = 215.9
   const pageH = 279.4
+  const cx = pageW / 2   // 107.95
+  const cy = pageH / 2   // 139.7
 
-  // Fiducial marker positions (centers)
-  const markers = [
-    { x: 25, y: 35 },       // Top-left
-    { x: 190.9, y: 35 },    // Top-right
-    { x: 25, y: 244.4 },    // Bottom-left
-    { x: 190.9, y: 244.4 }  // Bottom-right
-  ]
+  // --- Crosshair dimensions ---
+  const armLong = 20    // N and S arms extend 20mm from center
+  const armShort = 10   // E and W arms extend 10mm from center
+  const armWidth = 6    // arm thickness in mm
+  const tipSize = 10    // tip squares are 10×10mm
 
-  const outerSize = 20
-  const innerSize = 10
-  const dotSize = 2
-
-  // Draw fiducial markers
-  markers.forEach(m => {
-    // Outer black square
-    doc.setFillColor(0, 0, 0)
-    doc.rect(m.x - outerSize / 2, m.y - outerSize / 2, outerSize, outerSize, 'F')
-    // Inner white square
-    doc.setFillColor(255, 255, 255)
-    doc.rect(m.x - innerSize / 2, m.y - innerSize / 2, innerSize, innerSize, 'F')
-    // Center dot
-    doc.setFillColor(0, 0, 0)
-    doc.rect(m.x - dotSize / 2, m.y - dotSize / 2, dotSize, dotSize, 'F')
-  })
-
-  // Trace zone: dashed border connecting inner corners of markers
-  const traceLeft = markers[0].x + outerSize / 2
-  const traceRight = markers[1].x - outerSize / 2
-  const traceTop = markers[0].y + outerSize / 2
-  const traceBottom = markers[2].y - outerSize / 2
-
-  doc.setDrawColor(200, 200, 200)
-  doc.setLineWidth(0.3)
-  doc.setLineDashPattern([3, 3], 0)
-  doc.rect(traceLeft, traceTop, traceRight - traceLeft, traceBottom - traceTop, 'S')
-
-  // 10mm grid over trace zone
-  doc.setDrawColor(220, 220, 220)
-  doc.setLineWidth(0.1)
-  doc.setLineDashPattern([], 0)
-
-  for (let x = traceLeft; x <= traceRight; x += 10) {
-    doc.line(x, traceTop, x, traceBottom)
-  }
-  for (let y = traceTop; y <= traceBottom; y += 10) {
-    doc.line(traceLeft, y, traceRight, y)
-  }
-
-  // Horizontal ruler tick marks along top edge
-  doc.setDrawColor(150, 150, 150)
-  doc.setLineWidth(0.2)
-  doc.setFontSize(5)
-  doc.setTextColor(150, 150, 150)
-
-  for (let x = traceLeft; x <= traceRight; x += 10) {
-    doc.line(x, traceTop - 5, x, traceTop)
-    const mm = Math.round(x - traceLeft)
-    doc.text(String(mm), x + 0.5, traceTop - 6)
-  }
-
-  // Title: "SolePrint" centered at top
+  // --- Title ---
   doc.setFontSize(14)
   doc.setFont('helvetica', 'bold')
-  doc.setTextColor(46, 204, 143) // #2ECC8F
+  doc.setTextColor(46, 204, 143)
   doc.text('SolePrint', pageW / 2, 18, { align: 'center' })
 
-  // Scale warning
   doc.setFontSize(8)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(220, 50, 50)
-  doc.text('Print at 100% scale \u2014 do not scale to fit', pageW / 2, 25, { align: 'center' })
+  doc.text('Print at 100% scale \u2014 do not scale to fit', pageW / 2, 26, { align: 'center' })
 
-  // Instructions box below trace zone
-  doc.setFontSize(7)
+  // --- Crosshair arms (light gray background) ---
+  doc.setFillColor(210, 210, 210)
+  // Vertical arm (N/S): full 40mm tall, 6mm wide
+  doc.rect(cx - armWidth / 2, cy - armLong, armWidth, armLong * 2, 'F')
+  // Horizontal arm (E/W): full 20mm wide, 6mm tall
+  doc.rect(cx - armShort, cy - armWidth / 2, armShort * 2, armWidth, 'F')
+
+  // --- Tip squares (solid black, 10×10mm) ---
+  doc.setFillColor(0, 0, 0)
+  // N tip: center at (cx, cy - armLong)
+  doc.rect(cx - tipSize / 2, cy - armLong - tipSize / 2, tipSize, tipSize, 'F')
+  // S tip: center at (cx, cy + armLong)
+  doc.rect(cx - tipSize / 2, cy + armLong - tipSize / 2, tipSize, tipSize, 'F')
+  // W tip: center at (cx - armShort, cy)
+  doc.rect(cx - armShort - tipSize / 2, cy - tipSize / 2, tipSize, tipSize, 'F')
+  // E tip: center at (cx + armShort, cy)
+  doc.rect(cx + armShort - tipSize / 2, cy - tipSize / 2, tipSize, tipSize, 'F')
+
+  // --- Center dot ---
+  doc.setFillColor(0, 0, 0)
+  doc.circle(cx, cy, 1.5, 'F')
+
+  // --- Dashed oval placement guide (90×130mm, roughly shoe-sized) ---
+  doc.setDrawColor(180, 180, 180)
+  doc.setLineWidth(0.3)
+  doc.setLineDashPattern([3, 3], 0)
+  doc.ellipse(cx, cy, 45, 65, 'S')  // rx=45 (90mm wide), ry=65 (130mm tall)
+  doc.setLineDashPattern([], 0)
+
+  // Oval label
+  doc.setFontSize(6)
+  doc.setTextColor(160, 160, 160)
+  doc.text('Center shoe over the + mark', cx, cy - 67, { align: 'center' })
+
+  // --- Fiducial dimension annotations (light gray, small text) ---
+  doc.setFontSize(5.5)
+  doc.setTextColor(160, 160, 160)
+  // Annotate N/S arm distance
+  doc.text('40mm', cx + armWidth / 2 + 2, cy, { align: 'left' })
+  // Annotate E/W arm distance
+  doc.text('20mm', cx, cy + armWidth / 2 + 4, { align: 'center' })
+
+  // --- Instructions ---
+  const instrStartY = cy + 65 + 14  // just below the oval
+  doc.setFontSize(7.5)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(60, 60, 60)
+  doc.text('How to use this template:', pageW / 2, instrStartY, { align: 'center' })
+
+  doc.setFont('helvetica', 'normal')
   doc.setTextColor(80, 80, 80)
-  const instrY = traceBottom + 18
-  const instrX = 25
-  const instructions = [
-    '1. Print this page at exactly 100% (no \u2018fit to page\u2019)',
-    '2. Place shoe sole-down inside the dashed box',
-    '3. Trace carefully around the shoe with a BLACK marker',
-    '4. Trace the INSIDE edge of the marker line for best accuracy',
-    '5. Photograph from directly above in good, even lighting',
-    '6. Upload the photo to SolePrint \u2014 the scale markers will be detected automatically'
+  const steps = [
+    '1.  Place shoe sole-down, centered over the + crosshair',
+    '2.  Trace carefully around the shoe with a BLACK marker',
+    '3.  Lift the shoe straight up off the paper',
+    '4.  Photograph from directly above in good, even lighting',
+    '5.  Upload the photo \u2014 scale is detected automatically from the crosshair',
   ]
-  instructions.forEach((line, i) => {
-    doc.text(line, instrX, instrY + i * 4)
+  steps.forEach((line, i) => {
+    doc.text(line, pageW / 2, instrStartY + 6 + i * 5.5, { align: 'center' })
   })
 
-  // Scale verification bar at bottom
-  const barY = pageH - 18
-  const barX = pageW / 2 - 25
+  // Tip note
+  doc.setFontSize(6.5)
+  doc.setTextColor(130, 130, 130)
+  doc.text('Tip: use a thick black marker and trace the INSIDE edge of the line for best accuracy.',
+    pageW / 2, instrStartY + 6 + steps.length * 5.5 + 4, { align: 'center' })
+
+  // --- 50mm scale verification bar ---
+  const barY = pageH - 14
+  const barX = cx - 25
   doc.setDrawColor(0, 0, 0)
-  doc.setLineWidth(0.4)
-  doc.setLineDashPattern([], 0)
+  doc.setLineWidth(0.5)
   doc.line(barX, barY, barX + 50, barY)
-  // End ticks
-  doc.line(barX, barY - 2, barX, barY + 2)
-  doc.line(barX + 50, barY - 2, barX + 50, barY + 2)
+  doc.line(barX, barY - 2.5, barX, barY + 2.5)
+  doc.line(barX + 50, barY - 2.5, barX + 50, barY + 2.5)
   doc.setFontSize(6)
   doc.setTextColor(80, 80, 80)
-  doc.text('50mm \u2014 if this doesn\u2019t measure 50mm, reprint at 100%', pageW / 2, barY + 5, { align: 'center' })
+  doc.text('50 mm \u2014 if this measures differently, reprint at exactly 100%', cx, barY + 5, { align: 'center' })
 
-  // Website URL bottom right
+  // --- Website URL ---
   doc.setFontSize(7)
-  doc.setTextColor(180, 180, 180)
-  doc.text('soleprint.rinthlabs.com', pageW - 15, pageH - 8, { align: 'right' })
+  doc.setTextColor(190, 190, 190)
+  doc.text('soleprint.rinthlabs.com', pageW - 12, pageH - 4, { align: 'right' })
 
   doc.save('SolePrint-Template.pdf')
 }
