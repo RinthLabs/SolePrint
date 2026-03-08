@@ -29,7 +29,7 @@ function onStartOver() {
 
       <div class="two-col">
         <ParameterPanel @generate="onGenerate" @start-over="onStartOver" />
-        <SoleViewer :height="500" />
+        <SoleViewer :height="500" :svgPath="store.detectedSvgPath" />
       </div>
     </div>
   </div>

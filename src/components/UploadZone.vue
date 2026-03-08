@@ -61,7 +61,7 @@ function triggerInput() {
       </svg>
       <p class="upload-text">Drop your sole tracing here</p>
       <p class="upload-sub">or click to browse</p>
-      <p class="upload-formats">Accepts JPG, PNG, PDF</p>
+      <p class="upload-formats">Accepts JPG, PNG, PDF &mdash; scale detected automatically from template markers</p>
     </template>
 
     <template v-else>

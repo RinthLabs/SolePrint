@@ -13,8 +13,9 @@ onMounted(() => {
       <span class="eyebrow">Sustainable Footwear Repair</span>
       <h1>Give Your Shoes a Second Life</h1>
       <p class="subhead">
-        Upload a tracing of your shoe sole. We will help you generate a custom 3D
-        replacement sole you can have printed locally.
+        Download our free printable template, trace your shoe with a black marker, and upload the photo.
+        SolePrint detects the scale automatically and generates a custom 3D replacement sole ready for
+        printing. Perfect for Converse-style canvas shoes.
       </p>
       <div class="cta-row">
         <router-link to="/upload" class="btn-primary btn-lg">Upload Your Sole</router-link>
@@ -47,6 +48,17 @@ onMounted(() => {
       <div class="badge">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="9" stroke="#2ECC8F" stroke-width="2"/><path d="M6 10l3 3 5-5" stroke="#2ECC8F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Privacy First</span>
+      </div>
+    </div>
+    <div class="trust-badges trust-badges-secondary">
+      <div class="badge">
+        <span>Converse Compatible</span>
+      </div>
+      <div class="badge">
+        <span>Template-Based Scaling</span>
+      </div>
+      <div class="badge">
+        <span>Black Marker Trace</span>
       </div>
     </div>
   </section>
@@ -159,6 +171,15 @@ h1 {
   font-size: 14px;
   font-weight: 500;
   color: #4A4A4A;
+}
+
+.trust-badges-secondary {
+  padding-top: 0;
+}
+
+.trust-badges-secondary .badge {
+  font-size: 13px;
+  color: #999;
 }
 
 @media (max-width: 768px) {
