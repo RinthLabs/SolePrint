@@ -11,21 +11,9 @@ export function downloadTemplate() {
   const armLong = 20   // N and S
   const armShort = 10  // E and W
 
-  // ── True crosshair lines ──────────────────────────────────
-  // Two thin perpendicular lines, dark gray
-  doc.setDrawColor(40, 40, 40)
-  doc.setLineWidth(0.25)
-
-  // Vertical arm (N/S): center gap of 2mm so the center circle breathes
-  doc.line(cx, cy - armLong, cx, cy - 2.5)  // N arm
-  doc.line(cx, cy + 2.5,     cx, cy + armLong)  // S arm
-
-  // Horizontal arm (E/W): same center gap
-  doc.line(cx - armShort, cy, cx - 2.5, cy)  // W arm
-  doc.line(cx + 2.5,      cy, cx + armShort, cy)  // E arm
-
   // ── Tip markers (solid black squares, 8×8mm) ─────────────
-  // These are what the detection algorithm finds
+  // Four isolated squares — the only things the detection algorithm needs.
+  // No connecting lines (they caused CCL to merge all 4 into one blob).
   const tipSize = 8
   doc.setFillColor(0, 0, 0)
   // N — centered at (cx, cy - armLong)
@@ -37,10 +25,11 @@ export function downloadTemplate() {
   // E — centered at (cx + armShort, cy)
   doc.rect(cx + armShort - tipSize / 2, cy - tipSize / 2, tipSize, tipSize, 'F')
 
-  // ── Center circle (open, thin) ────────────────────────────
-  doc.setDrawColor(40, 40, 40)
-  doc.setLineWidth(0.25)
-  doc.circle(cx, cy, 2, 'S')
+  // ── Light gray center guide (not detectable — well above threshold) ──
+  // Visual-only cue so users know where to center their shoe.
+  doc.setDrawColor(210, 210, 210)
+  doc.setLineWidth(0.2)
+  doc.circle(cx, cy, 3, 'S')
 
   // ── Scale reference bars — bottom right ──────────────────
   // Two bars: 100mm (metric) and 4 inches (imperial = 101.6mm)
