@@ -13,7 +13,7 @@ onMounted(() => {
       <span class="eyebrow">Sustainable Footwear Repair</span>
       <h1>Give Your Shoes a Second Life</h1>
       <p class="subhead">
-        Download our free printable template, trace your shoe with a black marker, and upload the photo.
+        Download our free printable template, trace your shoe with a black marker, and upload your scan.
         SolePrint detects the scale automatically and generates a custom 3D replacement sole ready for
         printing. Perfect for Converse-style canvas shoes.
       </p>

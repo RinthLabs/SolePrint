@@ -95,7 +95,7 @@ export function downloadTemplate() {
   const lines = [
     'Print at 100% — do not scale to fit',
     'Center shoe on +, trace outline, lift shoe',
-    'Photograph from above and upload to soleprint.rinthlabs.com',
+    'Scan and upload at soleprint.rinthlabs.com (photo as last resort)',
   ]
   const instX = 12
   const instY = pageH - 22

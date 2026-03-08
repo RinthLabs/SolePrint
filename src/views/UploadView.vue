@@ -90,7 +90,7 @@ function onRetry() {
       <StepIndicator :current="1" />
 
       <h2>Upload Your Sole Tracing</h2>
-      <p class="subtitle">Take a photo of your shoe sole tracing to get started.</p>
+      <p class="subtitle">Scan your shoe sole tracing and upload to get started.</p>
 
       <!-- Download Template Button -->
       <div class="template-section">
@@ -100,7 +100,7 @@ function onRetry() {
           </svg>
           Download Printable Template (PDF)
         </button>
-        <p class="template-note">Print at 100% scale, trace your shoe, then upload the photo</p>
+        <p class="template-note">Print at 100% scale, trace your shoe, then scan and upload</p>
       </div>
 
       <UploadZone />
@@ -145,8 +145,8 @@ function onRetry() {
             <li>Place your shoe sole-down inside the dashed border</li>
             <li>Trace around the shoe with a BLACK marker</li>
             <li>Trace the INSIDE of the marker line (the line is 3-5mm, trace its inner edge)</li>
-            <li>Photograph from directly above in bright, even light</li>
-            <li>Upload the photo here &mdash; scale is detected automatically</li>
+            <li>Scan on a flatbed scanner for best results (photo from directly above as a fallback)</li>
+            <li>Upload the scan here — scale is detected automatically from the crosshair</li>
           </ol>
         </transition>
       </div>
