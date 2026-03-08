@@ -51,7 +51,16 @@ export async function processImage(imageElement, options = {}) {
 
   // ─────────────────────────────────────────────
   // Step 3: Connected component labeling (two-pass)
+  //
+  // The crosshair lines (~1-3px wide at scan resolution) connect all 4 tip
+  // squares into one blob. We erode before CCL to sever those thin bridges
+  // while the 8×8mm squares (80-120px at 300dpi) survive intact.
   // ─────────────────────────────────────────────
+  const erodeRadius = options.erodeRadius !== undefined ? options.erodeRadius : 3
+  const binaryForCCL = erodeRadius > 0
+    ? erodeBinary(binary, width, height, erodeRadius)
+    : binary
+
   const labels = new Int32Array(width * height)
   let nextLabel = 1
   const parent = [0]
@@ -72,7 +81,7 @@ export async function processImage(imageElement, options = {}) {
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const idx = y * width + x
-      if (!binary[idx]) continue
+      if (!binaryForCCL[idx]) continue
       const n = []
       if (x > 0 && labels[idx - 1]) n.push(labels[idx - 1])
       if (y > 0 && labels[idx - width]) n.push(labels[idx - width])
@@ -450,6 +459,26 @@ function scorePlusPattern(group) {
   }
 
   return best
+}
+
+/**
+ * Morphological binary erosion — shrinks each dark region by `radius` pixels.
+ * Thin connections (crosshair lines at ~1-3px) vanish; fat squares (80-120px) survive.
+ */
+function erodeBinary(binary, width, height, radius) {
+  const out = new Uint8Array(binary.length)
+  for (let y = radius; y < height - radius; y++) {
+    for (let x = radius; x < width - radius; x++) {
+      let ok = true
+      outer: for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          if (!binary[(y + dy) * width + (x + dx)]) { ok = false; break outer }
+        }
+      }
+      out[y * width + x] = ok ? 1 : 0
+    }
+  }
+  return out
 }
 
 /**
