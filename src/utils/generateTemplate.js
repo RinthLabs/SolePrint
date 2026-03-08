@@ -42,18 +42,51 @@ export function downloadTemplate() {
   doc.setLineWidth(0.25)
   doc.circle(cx, cy, 2, 'S')
 
-  // ── 50mm scale verification bar (bottom center) ──────────
-  const barY = pageH - 10
-  const barX = cx - 25
-  doc.setDrawColor(80, 80, 80)
+  // ── Scale reference bars — bottom right ──────────────────
+  // Two bars: 100mm (metric) and 4 inches (imperial = 101.6mm)
+  // Right-aligned to a common right edge so the page looks balanced.
+  const rightEdge = pageW - 12        // 203.9mm
+  const metricLen = 100               // mm
+  const imperialLen = 4 * 25.4        // 101.6mm
+  const tickH = 2.2                   // tick height in mm
+  const barGap = 6.5                  // vertical gap between the two bars
+
+  const metricY = pageH - 14
+  const imperialY = metricY - barGap
+
+  const metricX = rightEdge - metricLen   // left end of metric bar
+  const imperialX = rightEdge - imperialLen  // left end of imperial bar
+
+  doc.setDrawColor(110, 110, 110)
   doc.setLineWidth(0.3)
-  doc.line(barX, barY, barX + 50, barY)
-  doc.line(barX,      barY - 1.8, barX,      barY + 1.8)
-  doc.line(barX + 50, barY - 1.8, barX + 50, barY + 1.8)
   doc.setFontSize(5.5)
   doc.setFont('helvetica', 'normal')
-  doc.setTextColor(120, 120, 120)
-  doc.text('50 mm', cx, barY + 4, { align: 'center' })
+  doc.setTextColor(110, 110, 110)
+
+  // Metric bar
+  doc.line(metricX, metricY, rightEdge, metricY)
+  doc.line(metricX, metricY - tickH, metricX, metricY + tickH)
+  doc.line(rightEdge, metricY - tickH, rightEdge, metricY + tickH)
+  // Mid-tick at 50mm
+  doc.setLineWidth(0.15)
+  doc.line(metricX + 50, metricY - tickH * 0.6, metricX + 50, metricY + tickH * 0.6)
+  doc.setLineWidth(0.3)
+  doc.text('100 mm', metricX - 1, metricY + 0.5, { align: 'right' })
+
+  // Imperial bar
+  doc.line(imperialX, imperialY, rightEdge, imperialY)
+  doc.line(imperialX, imperialY - tickH, imperialX, imperialY + tickH)
+  doc.line(rightEdge, imperialY - tickH, rightEdge, imperialY + tickH)
+  // Mid-tick at 2"
+  doc.setLineWidth(0.15)
+  doc.line(imperialX + 50.8, imperialY - tickH * 0.6, imperialX + 50.8, imperialY + tickH * 0.6)
+  doc.setLineWidth(0.3)
+  doc.text('4 in', imperialX - 1, imperialY + 0.5, { align: 'right' })
+
+  // Tiny header above both bars
+  doc.setFontSize(5)
+  doc.setTextColor(155, 155, 155)
+  doc.text('Verify print scale:', rightEdge, imperialY - barGap * 0.55, { align: 'right' })
 
   // ── Minimal instructions — bottom left, light gray ────────
   doc.setFontSize(6)
@@ -69,6 +102,11 @@ export function downloadTemplate() {
   lines.forEach((line, i) => {
     doc.text(line, instX, instY + i * 4.5)
   })
+
+  // ── Website URL — very small, bottom right below scale bars ─
+  doc.setFontSize(5)
+  doc.setTextColor(190, 190, 190)
+  doc.text('soleprint.rinthlabs.com', rightEdge, pageH - 4, { align: 'right' })
 
   doc.save('SolePrint-Template.pdf')
 }
