@@ -12,10 +12,30 @@ watch(localParams, (val) => {
 const emit = defineEmits(['generate', 'startOver'])
 
 const sliders = [
-  { key: 'thickness', label: 'Sole Thickness', min: 8, max: 18, unit: 'mm', desc: 'Overall thickness of the sole from top to bottom.' },
-  { key: 'edgeRoundness', label: 'Edge Roundness', min: 0, max: 10, unit: '', desc: 'How rounded the edges of the sole are.' },
-  { key: 'treadDepth', label: 'Tread Depth', min: 0, max: 8, unit: 'mm', desc: 'Depth of the tread pattern on the bottom surface.' },
-  { key: 'heelLift', label: 'Heel Lift', min: 0, max: 15, unit: 'mm', desc: 'Additional height added to the heel area.' }
+  {
+    key: 'thickness',
+    label: 'Sole Thickness',
+    min: 8, max: 18, unit: 'mm',
+    desc: 'Overall thickness of the sole from top to bottom.',
+  },
+  {
+    key: 'edgeRoundness',
+    label: 'Edge Roundness',
+    min: 0, max: 10, unit: '',
+    desc: 'Rounds the bottom (ground-facing) edges. Top stays flat for gluing.',
+  },
+  {
+    key: 'heelLift',
+    label: 'Heel Lift',
+    min: 0, max: 15, unit: 'mm',
+    desc: 'Tapers the sole so the heel end is thicker than the toe end.',
+  },
+  {
+    key: 'rimHeight',
+    label: 'Raised Rim',
+    min: 0, max: 12, unit: 'mm',
+    desc: 'Adds a thin outer lip around the top edge, cupping the bottom of the shoe.',
+  },
 ]
 </script>
 

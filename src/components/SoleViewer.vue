@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { STLExporter } from 'three/addons/exporters/STLExporter.js'
 import { OBJExporter } from 'three/addons/exporters/OBJExporter.js'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { useSoleStore } from '../stores/soleStore'
 
 const props = defineProps({
@@ -16,7 +17,7 @@ const store = useSoleStore()
 const container = ref(null)
 const loading = ref(true)
 
-let scene, camera, renderer, controls, soleMesh, treadGroup, animId
+let scene, camera, renderer, controls, soleMesh, extrasGroup, animId
 
 // ─── SVG path parsing ────────────────────────────────────────────────────────
 
@@ -91,86 +92,103 @@ function buildAll(params, svgPathStr) {
     shape = buildDefaultShape()
   }
 
-  const hasPath    = !!svgPathStr
-  const bevel      = params.edgeRoundness * (hasPath ? 0.05 : 0.08)
-  const bevelThick = params.edgeRoundness * (hasPath ? 0.03 : 0.06)
-  const depth      = params.thickness * (hasPath ? 0.15 : 0.1)
+  const hasPath     = !!svgPathStr
+  const bevel       = params.edgeRoundness * (hasPath ? 0.05 : 0.08)
+  const bevelThick  = params.edgeRoundness * (hasPath ? 0.03 : 0.06)
+  const depth       = params.thickness * (hasPath ? 0.15 : 0.1)
 
   const geo = new THREE.ExtrudeGeometry(shape, {
     depth,
-    bevelEnabled:  params.edgeRoundness > 0,
-    bevelSegments: 4,
-    bevelSize:     bevel,
+    bevelEnabled:   params.edgeRoundness > 0,
+    bevelSegments:  4,
+    bevelSize:      bevel,
     bevelThickness: bevelThick,
-    curveSegments: 32,
+    curveSegments:  32,
   })
 
-  const mat = new THREE.MeshStandardMaterial({ color: 0xE2E2E2, roughness: 0.45, metalness: 0.08 })
+  // ── Get bounding box for heel taper + rim placement ──
+  geo.computeBoundingBox()
+  const bb     = geo.boundingBox
+  const yMin   = bb.min.y
+  const yRange = bb.max.y - bb.min.y
+
+  // ── Single vertex pass: flatten top bevel + heel taper ──
+  //
+  // Bevel at the top (Z > depth) makes the shoe-facing surface rounded.
+  // We only want rounding on the bottom (ground-facing) edges, so we clamp
+  // any vertex that went above `depth` back down to exactly `depth`.
+  //
+  // Heel taper: scale each vertex's Z proportionally based on its Y position
+  // (toe = yMin = no extra, heel = yMax = heelExtra added).
+  // The bottom face (Z ≤ 0) stays flat; only the body and top get tapered.
+  const heelExtra = params.heelLift * 0.08  // max extra depth at heel in display units
+  const pos = geo.attributes.position
+
+  for (let i = 0; i < pos.count; i++) {
+    let z = pos.getZ(i)
+    const y = pos.getY(i)
+
+    // 1. Flatten top bevel → bottom edges only
+    if (z > depth) z = depth
+
+    // 2. Heel taper → whole body scales in Z based on Y
+    if (heelExtra > 0 && z > 0.001) {
+      const t = Math.max(0, Math.min(1, (y - yMin) / yRange))  // 0=toe, 1=heel
+      const localDepth = depth + heelExtra * t
+      z = z * (localDepth / depth)
+    }
+
+    pos.setZ(i, z)
+  }
+  pos.needsUpdate = true
+  geo.computeVertexNormals()
+
+  const mat  = new THREE.MeshStandardMaterial({ color: 0xE2E2E2, roughness: 0.45, metalness: 0.08 })
   const mesh = new THREE.Mesh(geo, mat)
   mesh.castShadow = true
 
-  // ── Tread grooves ──
-  const treads = new THREE.Group()
-  if (params.treadDepth > 0) {
-    geo.computeBoundingBox()
-    const bb = geo.boundingBox
-    const bbW = bb.max.x - bb.min.x
-    const bbH = bb.max.y - bb.min.y
-    const numGrooves = 3 + Math.round(params.treadDepth * 0.6)
-    const grooveH    = bbH * 0.013
-    const grooveD    = Math.max(0.04, params.treadDepth * 0.05)
-    const grooveMat  = new THREE.MeshStandardMaterial({ color: 0xB0B0B0, roughness: 0.8 })
+  // ── Raised rim ──
+  // An annular ring extruded up from the top face, acting like a cup rim.
+  // Outer wall follows the sole outline; inner wall is the outline scaled inward
+  // toward the bounding-box center.
+  const extras = new THREE.Group()
+  if (params.rimHeight > 0) {
+    const cx     = (bb.min.x + bb.max.x) / 2
+    const cy     = (bb.min.y + bb.max.y) / 2
+    const halfW  = (bb.max.x - bb.min.x) / 2
+    const halfH  = (bb.max.y - bb.min.y) / 2
+    const rimWall = 0.35  // wall thickness in display units (~2–3 mm physical)
 
-    for (let i = 0; i < numGrooves; i++) {
-      const t = (i + 1) / (numGrooves + 1)
-      const grGeo = new THREE.BoxGeometry(bbW * 0.82, grooveH, grooveD)
-      const gr    = new THREE.Mesh(grGeo, grooveMat)
-      // Position on the bottom face of the sole (z = 0), slightly protruding downward
-      gr.position.set((bb.min.x + bb.max.x) / 2, bb.min.y + t * bbH, -grooveD / 2)
-      treads.add(gr)
-    }
+    const outerPts = shape.getPoints(96)
+    const rimShape = new THREE.Shape(outerPts)
+
+    const holePts = outerPts.map(p =>
+      new THREE.Vector2(
+        cx + (p.x - cx) * (1 - rimWall / halfW),
+        cy + (p.y - cy) * (1 - rimWall / halfH)
+      )
+    )
+    const hole = new THREE.Path()
+    hole.setFromPoints(holePts)
+    rimShape.holes.push(hole)
+
+    const rimDisplayH = params.rimHeight * 0.08
+    const rimGeo = new THREE.ExtrudeGeometry(rimShape, {
+      depth: rimDisplayH,
+      bevelEnabled: false,
+      curveSegments: 32,
+    })
+
+    const rimMesh = new THREE.Mesh(
+      rimGeo,
+      new THREE.MeshStandardMaterial({ color: 0xD8D8D8, roughness: 0.45, metalness: 0.08 })
+    )
+    rimMesh.position.z = depth  // sit on top of the sole
+    rimMesh.castShadow = true
+    extras.add(rimMesh)
   }
 
-  // ── Heel lift wedge ──
-  // Sits on top of the "positive Y" half of the sole (approximate heel side).
-  // Visual approximation — user should orient the sole correctly in their slicer.
-  if (params.heelLift > 0 && hasPath) {
-    geo.computeBoundingBox()
-    const bb    = geo.boundingBox
-    const bbW   = bb.max.x - bb.min.x
-    const bbH   = bb.max.y - bb.min.y
-    const wH    = params.heelLift * 0.15  // wedge max height in display units
-    const wLen  = bbH * 0.5              // wedge covers back half of sole
-
-    // Build wedge as a custom BufferGeometry (ramps from 0 → wH over wLen in Y)
-    const x0 = bb.min.x + bbW * 0.08, x1 = bb.max.x - bbW * 0.08
-    const y0 = bb.max.y - wLen, y1 = bb.max.y
-    const z  = depth  // top surface of sole
-
-    const verts = new Float32Array([
-      // bottom face (flat at z)
-      x0, y0, z,  x1, y0, z,  x0, y1, z,  x1, y1, z,
-      // top face (ramps to z + wH at y1)
-      x0, y0, z,       x1, y0, z,       x0, y1, z + wH,  x1, y1, z + wH,
-    ])
-    const idx = new Uint16Array([
-      0, 2, 1,  1, 2, 3,   // bottom quad
-      4, 5, 6,  5, 7, 6,   // top quad (wedge surface)
-      0, 1, 4,  1, 5, 4,   // front (toe) face
-      2, 6, 3,  3, 6, 7,   // back (heel) face
-      0, 4, 2,  4, 6, 2,   // left face
-      1, 3, 5,  3, 7, 5,   // right face
-    ])
-    const wGeo = new THREE.BufferGeometry()
-    wGeo.setAttribute('position', new THREE.BufferAttribute(verts, 3))
-    wGeo.setIndex(new THREE.BufferAttribute(idx, 1))
-    wGeo.computeVertexNormals()
-    const wedge = new THREE.Mesh(wGeo, new THREE.MeshStandardMaterial({ color: 0xD5D5D5, roughness: 0.5 }))
-    wedge.castShadow = true
-    treads.add(wedge)
-  }
-
-  return { mesh, treads, depth }
+  return { mesh, extras, depth }
 }
 
 // ─── Scene ───────────────────────────────────────────────────────────────────
@@ -217,27 +235,27 @@ function init() {
 }
 
 function addSoleToScene() {
-  if (soleMesh) { scene.remove(soleMesh); soleMesh.geometry.dispose() }
-  if (treadGroup) scene.remove(treadGroup)
+  if (soleMesh)     { scene.remove(soleMesh);     soleMesh.geometry.dispose() }
+  if (extrasGroup)    scene.remove(extrasGroup)
 
-  const { mesh, treads } = buildAll(store.params, props.svgPath)
-  soleMesh = mesh
-  treadGroup = treads
+  const { mesh, extras } = buildAll(store.params, props.svgPath)
+  soleMesh    = mesh
+  extrasGroup = extras
 
-  soleMesh.rotation.x = -Math.PI / 2
-  treadGroup.rotation.x = -Math.PI / 2
+  soleMesh.rotation.x    = -Math.PI / 2
+  extrasGroup.rotation.x = -Math.PI / 2
 
-  // Mirror: flip X axis. DoubleSide material so normals still render correctly in viewer.
   const mirrorX = props.mirrored ? -1 : 1
   soleMesh.scale.x    = mirrorX
-  treadGroup.scale.x  = mirrorX
+  extrasGroup.scale.x = mirrorX
+
   if (props.mirrored) {
-    soleMesh.material.side    = THREE.DoubleSide
-    treadGroup.traverse(c => { if (c.material) c.material.side = THREE.DoubleSide })
+    soleMesh.material.side = THREE.DoubleSide
+    extrasGroup.traverse(c => { if (c.material) c.material.side = THREE.DoubleSide })
   }
 
   scene.add(soleMesh)
-  scene.add(treadGroup)
+  scene.add(extrasGroup)
 }
 
 function animate() {
@@ -262,45 +280,61 @@ function onResize() {
   renderer.setSize(w, props.height)
 }
 
-watch(() => store.params,    addSoleToScene, { deep: true })
-watch(() => props.svgPath,   addSoleToScene)
-watch(() => props.mirrored,  addSoleToScene)
+watch(() => store.params,   addSoleToScene, { deep: true })
+watch(() => props.svgPath,  addSoleToScene)
+watch(() => props.mirrored, addSoleToScene)
 
 onMounted(() => { init(); window.addEventListener('resize', onResize) })
 onUnmounted(() => { cancelAnimationFrame(animId); window.removeEventListener('resize', onResize); renderer?.dispose() })
 
 // ─── Export ──────────────────────────────────────────────────────────────────
 
-function getScaledGeometry() {
+function getExportGeometry() {
   if (!soleMesh) return null
+
   const widthMm  = store.detectedWidthMm  || 100
   const heightMm = store.detectedHeightMm || 100
   const maxDim   = Math.max(widthMm, heightMm)
   const xyScale  = maxDim / 10
+  // The heel taper is already baked into the geometry vertex Z values.
+  // We only need to un-do the display scale factor (thickness * 0.15 → real mm).
   const zScale   = store.params.thickness / (store.params.thickness * 0.15)
   const mirrorX  = props.mirrored ? -1 : 1
 
-  const geom = soleMesh.geometry.clone()
-  const pos  = geom.attributes.position
-  for (let i = 0; i < pos.count; i++) {
-    pos.setX(i, pos.getX(i) * xyScale * mirrorX)
-    pos.setY(i, pos.getY(i) * xyScale)
-    pos.setZ(i, pos.getZ(i) * zScale)
+  function scaleGeom(src, zOffset = 0) {
+    const g = src.clone()
+    const p = g.attributes.position
+    for (let i = 0; i < p.count; i++) {
+      p.setX(i, p.getX(i) * xyScale * mirrorX)
+      p.setY(i, p.getY(i) * xyScale)
+      p.setZ(i, (p.getZ(i) + zOffset) * zScale)
+    }
+    p.needsUpdate = true
+    return g
   }
-  pos.needsUpdate = true
 
-  // When mirrored, X negation flips winding order → normals point inward.
-  // Fix by reversing every triangle's vertex order.
-  if (props.mirrored && geom.index) {
-    const idx = geom.index.array
+  const geoms = [ scaleGeom(soleMesh.geometry) ]
+
+  extrasGroup.traverse(child => {
+    if (child.isMesh) {
+      // child.position.z is in display space (e.g., depth), so include it in zOffset
+      geoms.push(scaleGeom(child.geometry, child.position.z))
+    }
+  })
+
+  const merged = geoms.length === 1 ? geoms[0] : mergeGeometries(geoms, false)
+
+  // Mirrored X flip reverses winding order → normals point inward; fix by swapping verts 1 & 2
+  if (props.mirrored && merged.index) {
+    const idx = merged.index.array
     for (let i = 0; i < idx.length; i += 3) {
       const tmp = idx[i + 1]; idx[i + 1] = idx[i + 2]; idx[i + 2] = tmp
     }
-    geom.index.needsUpdate = true
+    merged.index.needsUpdate = true
   }
 
-  geom.computeVertexNormals()
-  return geom
+  merged.computeVertexNormals()
+  return merged
 }
 
 function downloadBlob(blob, filename) {
@@ -311,14 +345,14 @@ function downloadBlob(blob, filename) {
 }
 
 function exportSTL() {
-  const geom = getScaledGeometry(); if (!geom) return
+  const geom = getExportGeometry(); if (!geom) return
   const data = new STLExporter().parse(new THREE.Mesh(geom, soleMesh.material), { binary: true })
   downloadBlob(new Blob([data], { type: 'application/octet-stream' }), 'soleprint-sole.stl')
   geom.dispose()
 }
 
 function exportOBJ() {
-  const geom = getScaledGeometry(); if (!geom) return
+  const geom = getExportGeometry(); if (!geom) return
   const mesh = new THREE.Mesh(geom, soleMesh.material)
   const sc   = new THREE.Scene(); sc.add(mesh)
   const data = new OBJExporter().parse(sc)
