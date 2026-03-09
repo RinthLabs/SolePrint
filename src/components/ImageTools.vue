@@ -52,7 +52,7 @@ watch(localAdj, () => {
   applyAdjustments()
 }, { deep: true })
 
-onMounted(() => { nextTick(applyAdjustments) })
+onMounted(() => { applyAdjustments() })
 
 function resetAll() {
   localAdj.value = { rotate: 0, brightness: 100, contrast: 100, threshold: 128, blur: 0 }
@@ -74,29 +74,33 @@ const hasResult = () => props.detectionSize && !props.detectionError
           <p>Detecting outline…</p>
         </div>
 
-        <!-- Detection result image (data URL from debug canvas) -->
-        <div v-else-if="detectionCanvas" class="canvas-result">
-          <img :src="detectionCanvas" class="detection-img" />
-          <!-- Auto-detect debounce overlay -->
-          <div v-if="autoDetecting" class="updating-overlay">
-            <div class="spinner-sm"></div>
-            <span>Updating…</span>
+        <template v-else>
+          <!-- Detection result image — visible when we have a result AND not mid-adjustment -->
+          <div v-if="detectionCanvas && !autoDetecting" class="canvas-result">
+            <img :src="detectionCanvas" class="detection-img" />
           </div>
-        </div>
 
-        <!-- Image preview canvas -->
-        <div v-else class="canvas-preview">
-          <canvas ref="previewCanvas"></canvas>
-        </div>
+          <!-- Preview canvas — ALWAYS mounted so the ref stays valid.
+               Hidden via CSS when detection image is showing. Immediately visible
+               when user adjusts sliders (autoDetecting=true) so they see live feedback. -->
+          <div class="canvas-preview" :class="{ hidden: detectionCanvas && !autoDetecting }">
+            <canvas ref="previewCanvas"></canvas>
+            <!-- "Updating..." badge shown while debounce is counting down -->
+            <div v-if="autoDetecting" class="updating-overlay">
+              <div class="spinner-sm"></div>
+              <span>Updating…</span>
+            </div>
+          </div>
 
-        <!-- Error state (shows below the canvas area when we had a prior canvas) -->
-        <div v-if="detectionError && !detecting" class="canvas-state error-state">
-          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-            <circle cx="14" cy="14" r="13" stroke="#E74C3C" stroke-width="1.5"/>
-            <path d="M14 8v7M14 18v1" stroke="#E74C3C" stroke-width="2" stroke-linecap="round"/>
-          </svg>
-          <p>{{ detectionError }}</p>
-        </div>
+          <!-- Error -->
+          <div v-if="detectionError" class="canvas-state error-state">
+            <svg width="24" height="24" viewBox="0 0 28 28" fill="none">
+              <circle cx="14" cy="14" r="13" stroke="#E74C3C" stroke-width="1.5"/>
+              <path d="M14 8v7M14 18v1" stroke="#E74C3C" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <p>{{ detectionError }}</p>
+          </div>
+        </template>
       </div>
 
       <!-- ── Right: controls column ── -->
@@ -239,6 +243,14 @@ const hasResult = () => props.detectionSize && !props.detectionError
   align-items: center;
   gap: 7px;
   z-index: 4;
+}
+
+.canvas-preview {
+  position: relative;
+}
+
+.canvas-preview.hidden {
+  display: none;
 }
 
 .canvas-preview canvas {
