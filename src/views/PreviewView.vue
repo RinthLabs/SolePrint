@@ -18,10 +18,10 @@ function showToast(msg, type = 'success') {
 
 // Sole parameter sliders
 const sliders = [
-  { key: 'thickness',     label: 'Thickness',      min: 6,  max: 18, unit: 'mm', tip: 'Overall sole depth from top to bottom.' },
-  { key: 'edgeRoundness', label: 'Edge Roundness',  min: 0,  max: 10, unit: '',   tip: 'Bevel on the perimeter edge.' },
-  { key: 'treadDepth',    label: 'Tread Grooves',   min: 0,  max: 8,  unit: '',   tip: 'Horizontal groove lines on the sole bottom. Visual approximation — actual cuts need post-processing in your slicer.' },
-  { key: 'heelLift',      label: 'Heel Wedge',      min: 0,  max: 15, unit: 'mm', tip: 'Adds a raised wedge to the back half of the sole. Rotate in your slicer so the heel side aligns correctly.' },
+  { key: 'thickness',     label: 'Thickness',    min: 1,  max: 18, unit: 'mm', tip: 'Overall sole depth from top to bottom.' },
+  { key: 'edgeRoundness', label: 'Edge Roundness', min: 0, max: 10, unit: '',   tip: 'Rounds the bottom (ground-facing) edges only. Top stays flat for gluing.' },
+  { key: 'heelLift',      label: 'Heel Lift',    min: 0,  max: 15, unit: 'mm', tip: 'Tapers the sole so the heel end is thicker than the toe end.' },
+  { key: 'rimHeight',     label: 'Raised Rim',   min: 0,  max: 12, unit: 'mm', tip: 'Adds a thin outer lip around the top edge, cupping the bottom of the shoe.' },
 ]
 
 function updateParam(key, val) {
