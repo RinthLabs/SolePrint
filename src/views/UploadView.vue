@@ -13,11 +13,12 @@ const store  = useSoleStore()
 const instructionsOpen = ref(false)
 
 // Detection state — passed as props into ImageTools
-const detecting       = ref(false)
-const autoDetecting   = ref(false)
-const detectionCanvas = ref(null)
-const detectionError  = ref(null)
-const detectionSize   = ref(null)
+const detecting          = ref(false)
+const autoDetecting      = ref(false)
+const autoDetectEnabled  = ref(true)
+const detectionCanvas    = ref(null)
+const detectionError     = ref(null)
+const detectionSize      = ref(null)
 
 // ─── Detection ────────────────────────────────────────────────────────────────
 
@@ -90,8 +91,8 @@ async function onProcess() {
 let debounceTimer = null
 
 watch(() => store.imageAdjustments, () => {
-  // Only auto-detect after at least one detection attempt (success or fail)
-  if (!detectionSize.value && !detectionError.value) return
+  if (!autoDetectEnabled.value) return                          // toggle is off
+  if (!detectionSize.value && !detectionError.value) return    // no first detection yet
   if (detecting.value) return
 
   clearTimeout(debounceTimer)
@@ -158,11 +159,13 @@ const isWide = computed(() => !!store.uploadedImage)
       <ImageTools
         :detecting="detecting"
         :autoDetecting="autoDetecting"
+        :autoDetectEnabled="autoDetectEnabled"
         :detectionCanvas="detectionCanvas"
         :detectionError="detectionError"
         :detectionSize="detectionSize"
         @process="onProcess"
         @continue="onContinue"
+        @toggleAutoDetect="val => autoDetectEnabled = val"
       />
 
       <!-- How-to accordion -->

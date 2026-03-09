@@ -3,14 +3,15 @@ import { ref, watch, onMounted } from 'vue'
 import { useSoleStore } from '../stores/soleStore'
 
 const props = defineProps({
-  detecting:       { type: Boolean, default: false },
-  autoDetecting:   { type: Boolean, default: false }, // debounce in-progress
-  detectionCanvas: { type: String,  default: null },  // data URL string
-  detectionError:  { type: String,  default: null },
-  detectionSize:   { type: String,  default: null },
+  detecting:          { type: Boolean, default: false },
+  autoDetecting:      { type: Boolean, default: false },
+  autoDetectEnabled:  { type: Boolean, default: true },
+  detectionCanvas:    { type: String,  default: null },
+  detectionError:     { type: String,  default: null },
+  detectionSize:      { type: String,  default: null },
 })
 
-const emit = defineEmits(['process', 'continue'])
+const emit = defineEmits(['process', 'continue', 'toggleAutoDetect'])
 
 const store = useSoleStore()
 const previewCanvas = ref(null)
@@ -106,6 +107,20 @@ const hasResult = () => props.detectionSize && !props.detectionError
 
       <!-- ── Right: controls column ── -->
       <div class="controls-col">
+
+        <!-- Auto-detect toggle -->
+        <div class="auto-detect-row">
+          <span class="auto-label">Auto re-detect</span>
+          <button
+            :class="['toggle-switch', { on: autoDetectEnabled }]"
+            @click="emit('toggleAutoDetect', !autoDetectEnabled)"
+            :title="autoDetectEnabled
+              ? 'On — re-detects 700ms after any slider change'
+              : 'Off — click Re-detect manually'"
+          >
+            <span class="toggle-knob"></span>
+          </button>
+        </div>
 
         <!-- Status banner -->
         <div v-if="hasResult() || autoDetecting" class="status-banner"
@@ -298,6 +313,47 @@ const hasResult = () => props.detectionSize && !props.detectionError
   flex-direction: column;
   gap: 16px;
 }
+
+/* Auto-detect toggle */
+.auto-detect-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+}
+
+.auto-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #555;
+}
+
+.toggle-switch {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  background: #DDD;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: background 200ms ease;
+  flex-shrink: 0;
+}
+
+.toggle-switch.on { background: #2ECC8F; }
+
+.toggle-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: transform 200ms ease;
+}
+
+.toggle-switch.on .toggle-knob { transform: translateX(16px); }
 
 /* Status banner */
 .status-banner {

@@ -197,7 +197,9 @@ function init() {
   scene.add(new THREE.AmbientLight(0xffffff, 0.7))
   const key = new THREE.DirectionalLight(0xffffff, 1.2)
   key.position.set(8, 14, 8); key.castShadow = true; scene.add(key)
-  scene.add(Object.assign(new THREE.DirectionalLight(0xffffff, 0.4), { position: new THREE.Vector3(-6, 4, -6) }))
+  const fill = new THREE.DirectionalLight(0xffffff, 0.4)
+  fill.position.set(-6, 4, -6)
+  scene.add(fill)
 
   addSoleToScene()
 

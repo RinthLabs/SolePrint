@@ -28,7 +28,7 @@ export async function processImage(imageElement, options = {}) {
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
-  const ctx = canvas.getContext('2d')
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
   ctx.drawImage(imageElement, 0, 0, width, height)
   const imageData = ctx.getImageData(0, 0, width, height)
   const gray = new Uint8Array(width * height)
@@ -380,7 +380,8 @@ export async function processImage(imageElement, options = {}) {
   const debugCanvas = document.createElement('canvas')
   debugCanvas.width = width
   debugCanvas.height = height
-  const dctx = debugCanvas.getContext('2d')
+  // willReadFrequently: true — avoids repeated getImageData performance warnings
+  const dctx = debugCanvas.getContext('2d', { willReadFrequently: true })
   dctx.drawImage(imageElement, 0, 0, width, height)
 
   const lw = Math.max(2, width / 600)
@@ -405,9 +406,9 @@ export async function processImage(imageElement, options = {}) {
     dctx.stroke()
   }
 
-  // Draw ray-cast shoe outline
-  dctx.strokeStyle = 'rgba(255, 70, 70, 0.85)'
-  dctx.lineWidth = lw * 1.5
+  // Draw raw ray-cast outline (faint) — shows what was detected before simplification
+  dctx.strokeStyle = 'rgba(255, 120, 120, 0.35)'
+  dctx.lineWidth = lw
   dctx.beginPath()
   filtered.forEach((p, i) => {
     if (i === 0) dctx.moveTo(p.x, p.y)
@@ -415,6 +416,16 @@ export async function processImage(imageElement, options = {}) {
   })
   dctx.closePath()
   dctx.stroke()
+
+  // Draw the smoothed bezier outline (solid red) — reflects Detail Level + Smoothing sliders.
+  // svgPath is in mm, centered at origin; transform to pixel space for drawing.
+  dctx.save()
+  dctx.translate(centerX, centerY)
+  dctx.scale(1 / scaleMmPerPx, 1 / scaleMmPerPx)
+  dctx.strokeStyle = 'rgba(255, 50, 50, 0.95)'
+  dctx.lineWidth = lw * 1.8 * scaleMmPerPx   // compensate for scale transform
+  dctx.stroke(new Path2D(svgPath))
+  dctx.restore()
 
   return {
     svgPath,
