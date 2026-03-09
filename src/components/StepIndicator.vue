@@ -3,7 +3,7 @@ defineProps({
   current: { type: Number, default: 1 }
 })
 
-const steps = ['Upload', 'Adjust', 'Preview']
+const steps = ['Upload', 'Customize & Export']
 </script>
 
 <template>
@@ -50,16 +50,10 @@ const steps = ['Upload', 'Adjust', 'Preview']
   color: #2ECC8F;
 }
 
-.step-num {
-  font-weight: 600;
-}
+.step-num { font-weight: 600; }
 
 @media (max-width: 768px) {
-  .step-label {
-    display: none;
-  }
-  .step {
-    padding: 8px 14px;
-  }
+  .step-label { display: none; }
+  .step { padding: 8px 14px; }
 }
 </style>

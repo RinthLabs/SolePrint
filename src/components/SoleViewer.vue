@@ -2,10 +2,11 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { STLExporter } from 'three/addons/exporters/STLExporter.js'
+import { OBJExporter } from 'three/addons/exporters/OBJExporter.js'
 import { useSoleStore } from '../stores/soleStore'
 
 const props = defineProps({
-  readonly: Boolean,
   height: { type: Number, default: 500 },
   svgPath: { type: String, default: null }
 })
@@ -14,32 +15,9 @@ const store = useSoleStore()
 const container = ref(null)
 const loading = ref(true)
 
-let scene, camera, renderer, controls, soleMesh, treadGroup, animId
+let scene, camera, renderer, controls, soleMesh, animId
 
-function buildShapeFromSvgPath(pathStr) {
-  const shape = new THREE.Shape()
-  const commands = parseSvgPath(pathStr)
-
-  let first = true
-  for (const cmd of commands) {
-    if (cmd.type === 'M') {
-      if (first) {
-        shape.moveTo(cmd.x, cmd.y)
-        first = false
-      } else {
-        shape.moveTo(cmd.x, cmd.y)
-      }
-    } else if (cmd.type === 'L') {
-      shape.lineTo(cmd.x, cmd.y)
-    } else if (cmd.type === 'C') {
-      shape.bezierCurveTo(cmd.x1, cmd.y1, cmd.x2, cmd.y2, cmd.x, cmd.y)
-    } else if (cmd.type === 'Z') {
-      shape.closePath()
-    }
-  }
-
-  return shape
-}
+// ─── Shape building ──────────────────────────────────────────────────────────
 
 function parseSvgPath(d) {
   const commands = []
@@ -48,7 +26,6 @@ function parseSvgPath(d) {
   while ((match = re.exec(d)) !== null) {
     const type = match[1].toUpperCase()
     const args = match[2].trim().split(/[\s,]+/).filter(s => s).map(Number)
-
     if (type === 'M' && args.length >= 2) {
       commands.push({ type: 'M', x: args[0], y: args[1] })
     } else if (type === 'L' && args.length >= 2) {
@@ -57,12 +34,7 @@ function parseSvgPath(d) {
       }
     } else if (type === 'C' && args.length >= 6) {
       for (let i = 0; i < args.length; i += 6) {
-        commands.push({
-          type: 'C',
-          x1: args[i], y1: args[i + 1],
-          x2: args[i + 2], y2: args[i + 3],
-          x: args[i + 4], y: args[i + 5]
-        })
+        commands.push({ type: 'C', x1: args[i], y1: args[i+1], x2: args[i+2], y2: args[i+3], x: args[i+4], y: args[i+5] })
       }
     } else if (type === 'Z') {
       commands.push({ type: 'Z' })
@@ -87,90 +59,58 @@ function buildDefaultShape() {
 
 function buildSole(params, svgPathStr) {
   let shape
-  if (svgPathStr) {
-    shape = buildShapeFromSvgPath(svgPathStr)
-    // Normalize shape to fit ~100 units wide
-    const box = new THREE.Box2()
-    const pts = shape.getPoints(64)
-    for (const p of pts) box.expandByPoint(new THREE.Vector2(p.x, p.y))
-    const size = new THREE.Vector2()
-    box.getSize(size)
-    const scale = 10 / Math.max(size.x, size.y)
-    const center = new THREE.Vector2()
-    box.getCenter(center)
 
-    // Rebuild shape scaled and centered
-    const scaledPath = svgPathStr
-    shape = buildShapeFromSvgPath(scaledPath)
-    // Apply transform by recreating
-    const newShape = new THREE.Shape()
+  if (svgPathStr) {
+    // Build shape from SVG, measure bounds, rescale to ~10 display units at max dim
+    const raw = new THREE.Shape()
     const commands = parseSvgPath(svgPathStr)
     let first = true
     for (const cmd of commands) {
-      const tx = (x) => (x - center.x) * scale
-      const ty = (y) => (y - center.y) * scale
-      if (cmd.type === 'M') {
-        if (first) { newShape.moveTo(tx(cmd.x), ty(cmd.y)); first = false }
-        else newShape.moveTo(tx(cmd.x), ty(cmd.y))
-      } else if (cmd.type === 'L') {
-        newShape.lineTo(tx(cmd.x), ty(cmd.y))
-      } else if (cmd.type === 'C') {
-        newShape.bezierCurveTo(tx(cmd.x1), ty(cmd.y1), tx(cmd.x2), ty(cmd.y2), tx(cmd.x), ty(cmd.y))
-      } else if (cmd.type === 'Z') {
-        newShape.closePath()
-      }
+      if (cmd.type === 'M') { if (first) { raw.moveTo(cmd.x, cmd.y); first = false } else raw.moveTo(cmd.x, cmd.y) }
+      else if (cmd.type === 'L') raw.lineTo(cmd.x, cmd.y)
+      else if (cmd.type === 'C') raw.bezierCurveTo(cmd.x1, cmd.y1, cmd.x2, cmd.y2, cmd.x, cmd.y)
+      else if (cmd.type === 'Z') raw.closePath()
     }
-    shape = newShape
+    const box = new THREE.Box2()
+    raw.getPoints(64).forEach(p => box.expandByPoint(new THREE.Vector2(p.x, p.y)))
+    const size = new THREE.Vector2(); box.getSize(size)
+    const scale = 10 / Math.max(size.x, size.y)
+    const center = new THREE.Vector2(); box.getCenter(center)
+    const tx = x => (x - center.x) * scale
+    const ty = y => (y - center.y) * scale
+
+    shape = new THREE.Shape()
+    first = true
+    for (const cmd of commands) {
+      if (cmd.type === 'M') { if (first) { shape.moveTo(tx(cmd.x), ty(cmd.y)); first = false } else shape.moveTo(tx(cmd.x), ty(cmd.y)) }
+      else if (cmd.type === 'L') shape.lineTo(tx(cmd.x), ty(cmd.y))
+      else if (cmd.type === 'C') shape.bezierCurveTo(tx(cmd.x1), ty(cmd.y1), tx(cmd.x2), ty(cmd.y2), tx(cmd.x), ty(cmd.y))
+      else if (cmd.type === 'Z') shape.closePath()
+    }
   } else {
     shape = buildDefaultShape()
   }
 
-  const bevelSize = params.edgeRoundness * (svgPathStr ? 0.05 : 0.08)
+  const bevelSize      = params.edgeRoundness * (svgPathStr ? 0.05 : 0.08)
   const bevelThickness = params.edgeRoundness * (svgPathStr ? 0.03 : 0.06)
+  const depth          = params.thickness * (svgPathStr ? 0.15 : 0.1)
 
-  const extrudeSettings = {
-    depth: params.thickness * (svgPathStr ? 0.15 : 0.1),
-    bevelEnabled: params.edgeRoundness > 0,
-    bevelSegments: 4,
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth,
+    bevelEnabled:   params.edgeRoundness > 0,
+    bevelSegments:  4,
     bevelSize,
     bevelThickness,
-    curveSegments: 32
-  }
-
-  const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings)
-  const material = new THREE.MeshStandardMaterial({
-    color: 0xE8E8E8,
-    roughness: 0.4,
-    metalness: 0.1
+    curveSegments:  32,
   })
 
+  const material = new THREE.MeshStandardMaterial({ color: 0xE8E8E8, roughness: 0.4, metalness: 0.1 })
   const mesh = new THREE.Mesh(geometry, material)
   mesh.castShadow = true
-
-  // Tread grooves
-  const treads = new THREE.Group()
-  if (params.treadDepth > 0) {
-    geometry.computeBoundingBox()
-    const bb = geometry.boundingBox
-    const w = bb.max.x - bb.min.x
-    const h = bb.max.y - bb.min.y
-    const grooveMat = new THREE.MeshStandardMaterial({ color: 0xD0D0D0, roughness: 0.6, metalness: 0.05 })
-
-    for (let i = 0; i < 5; i++) {
-      const t = (i + 1) / 6
-      const grooveGeo = new THREE.BoxGeometry(w * 0.85, h * 0.01, params.treadDepth * 0.05)
-      const groove = new THREE.Mesh(grooveGeo, grooveMat)
-      groove.position.set(
-        (bb.min.x + bb.max.x) / 2,
-        bb.min.y + t * h,
-        -params.treadDepth * 0.02
-      )
-      treads.add(groove)
-    }
-  }
-
-  return { mesh, treads }
+  return mesh
 }
+
+// ─── Scene init ──────────────────────────────────────────────────────────────
 
 function init() {
   if (!container.value) return
@@ -182,8 +122,8 @@ function init() {
   const h = props.height
 
   camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 200)
-  const heelLift = store.params.heelLift || 0
-  camera.position.set(0, heelLift * 3, props.svgPath ? 25 : 14)
+  camera.position.set(0, props.svgPath ? 20 : 12, props.svgPath ? 10 : 8)
+  camera.lookAt(0, 0, 0)
 
   renderer = new THREE.WebGLRenderer({ antialias: true })
   renderer.setSize(w, h)
@@ -191,171 +131,175 @@ function init() {
   renderer.shadowMap.enabled = true
   container.value.appendChild(renderer.domElement)
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.6)
-  scene.add(ambient)
+  scene.add(new THREE.AmbientLight(0xffffff, 0.7))
+  const key = new THREE.DirectionalLight(0xffffff, 1.2)
+  key.position.set(8, 14, 8); key.castShadow = true; scene.add(key)
+  const fill = new THREE.DirectionalLight(0xffffff, 0.4)
+  fill.position.set(-6, 4, -6); scene.add(fill)
 
-  const point = new THREE.PointLight(0xffffff, 1, 50)
-  point.position.set(5, 10, 5)
-  point.castShadow = true
-  scene.add(point)
-
-  const point2 = new THREE.PointLight(0xffffff, 0.4, 50)
-  point2.position.set(-5, 5, -5)
-  scene.add(point2)
-
-  const { mesh, treads } = buildSole(store.params, props.svgPath)
-  soleMesh = mesh
+  soleMesh = buildSole(store.params, props.svgPath)
   soleMesh.rotation.x = -Math.PI / 2
   scene.add(soleMesh)
-  treadGroup = treads
-  treadGroup.rotation.x = -Math.PI / 2
-  scene.add(treadGroup)
 
-  if (!props.readonly) {
-    controls = new OrbitControls(camera, renderer.domElement)
-    controls.enableDamping = true
-    controls.dampingFactor = 0.05
-    controls.maxDistance = 50
-    controls.minDistance = 5
-  }
+  controls = new OrbitControls(camera, renderer.domElement)
+  controls.enableDamping    = true
+  controls.dampingFactor    = 0.05
+  controls.autoRotate       = true
+  controls.autoRotateSpeed  = 1.2
+  controls.maxDistance      = 60
+  controls.minDistance      = 4
+  // Stop auto-rotate when user touches the model
+  renderer.domElement.addEventListener('pointerdown', () => { controls.autoRotate = false })
 
   loading.value = false
   animate()
 }
 
-let idleTime = 0
 function animate() {
   animId = requestAnimationFrame(animate)
-  if (controls) {
-    controls.update()
-  }
-  if (soleMesh && !props.readonly) {
-    idleTime += 0.003
-    soleMesh.rotation.z = Math.sin(idleTime) * 0.15
-    if (treadGroup) treadGroup.rotation.z = Math.sin(idleTime) * 0.15
-  }
+  controls?.update()
   renderer.render(scene, camera)
-}
-
-function setView(view) {
-  if (view === 'top') {
-    camera.position.set(0, 15, 0.01)
-  } else {
-    camera.position.set(0, -15, 0.01)
-  }
-  camera.lookAt(0, 0, 0)
 }
 
 function updateGeometry() {
   if (!soleMesh || !scene) return
   scene.remove(soleMesh)
-  if (treadGroup) scene.remove(treadGroup)
-
-  const { mesh, treads } = buildSole(store.params, props.svgPath)
-  soleMesh = mesh
-  soleMesh.castShadow = true
+  soleMesh.geometry.dispose()
+  soleMesh = buildSole(store.params, props.svgPath)
   soleMesh.rotation.x = -Math.PI / 2
   scene.add(soleMesh)
-  treadGroup = treads
-  treadGroup.rotation.x = -Math.PI / 2
-  scene.add(treadGroup)
+}
+
+function setView(view) {
+  if (view === 'top') {
+    camera.position.set(0, 18, 0.1)
+  } else {
+    camera.position.set(0, -18, 0.1)
+  }
+  camera.lookAt(0, 0, 0)
+  controls.autoRotate = false
+}
+
+function onResize() {
+  if (!container.value || !renderer || !camera) return
+  const w = container.value.clientWidth
+  camera.aspect = w / props.height
+  camera.updateProjectionMatrix()
+  renderer.setSize(w, props.height)
 }
 
 watch(() => store.params, updateGeometry, { deep: true })
 watch(() => props.svgPath, updateGeometry)
 
-function onResize() {
-  if (!container.value || !renderer || !camera) return
-  const w = container.value.clientWidth
-  const h = props.height
-  camera.aspect = w / h
-  camera.updateProjectionMatrix()
-  renderer.setSize(w, h)
-}
-
-onMounted(() => {
-  init()
-  window.addEventListener('resize', onResize)
-})
-
+onMounted(() => { init(); window.addEventListener('resize', onResize) })
 onUnmounted(() => {
   cancelAnimationFrame(animId)
   window.removeEventListener('resize', onResize)
-  if (renderer) {
-    renderer.dispose()
-  }
+  renderer?.dispose()
 })
+
+// ─── Export ──────────────────────────────────────────────────────────────────
+
+function getScaledGeometry() {
+  if (!soleMesh) return null
+
+  const widthMm  = store.detectedWidthMm  || 100
+  const heightMm = store.detectedHeightMm || 100
+  const maxDim   = Math.max(widthMm, heightMm)
+
+  // Display geometry: shape normalized to 10 units at max dimension
+  //   → xyScale converts display units back to real mm
+  const xyScale = maxDim / 10
+  // Z: extruded as params.thickness * 0.15 display units; should be params.thickness mm
+  const zScale  = store.params.thickness / (store.params.thickness * 0.15)  // = 1/0.15
+
+  const geom = soleMesh.geometry.clone()
+  const pos  = geom.attributes.position
+  for (let i = 0; i < pos.count; i++) {
+    pos.setX(i, pos.getX(i) * xyScale)
+    pos.setY(i, pos.getY(i) * xyScale)
+    pos.setZ(i, pos.getZ(i) * zScale)
+  }
+  pos.needsUpdate = true
+  geom.computeVertexNormals()
+  return geom
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const a   = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+function exportSTL() {
+  const geom = getScaledGeometry()
+  if (!geom) return
+  const mesh = new THREE.Mesh(geom, soleMesh.material)
+  const data = new STLExporter().parse(mesh, { binary: true })
+  downloadBlob(new Blob([data], { type: 'application/octet-stream' }), 'soleprint-sole.stl')
+  geom.dispose()
+}
+
+function exportOBJ() {
+  const geom = getScaledGeometry()
+  if (!geom) return
+  const mesh  = new THREE.Mesh(geom, soleMesh.material)
+  const tmpScene = new THREE.Scene(); tmpScene.add(mesh)
+  const data = new OBJExporter().parse(tmpScene)
+  downloadBlob(new Blob([data], { type: 'text/plain' }), 'soleprint-sole.obj')
+  geom.dispose()
+}
+
+defineExpose({ exportSTL, exportOBJ, setView })
 </script>
 
 <template>
   <div class="sole-viewer">
     <div v-if="loading" class="loading">
       <div class="spinner"></div>
-      <p>Generating your sole...</p>
+      <p>Generating your sole…</p>
     </div>
     <div ref="container" class="canvas-container" :style="{ minHeight: height + 'px' }"></div>
-    <div v-if="!readonly" class="view-buttons">
+    <div class="view-buttons">
       <button class="btn-ghost btn-sm" @click="setView('top')">Top View</button>
       <button class="btn-ghost btn-sm" @click="setView('bottom')">Bottom View</button>
+      <button class="btn-ghost btn-sm" @click="controls && (controls.autoRotate = !controls.autoRotate)">Auto-Rotate</button>
     </div>
   </div>
 </template>
 
 <style scoped>
-.sole-viewer {
-  position: relative;
-}
+.sole-viewer { position: relative; }
 
 .canvas-container {
   border-radius: 16px;
   overflow: hidden;
   background: #FAFAFA;
+  box-shadow: 0 2px 20px rgba(0,0,0,0.07);
 }
 
-.canvas-container canvas {
-  display: block;
-}
+.canvas-container canvas { display: block; }
 
 .loading {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  background: rgba(250,250,250,0.9);
-  z-index: 5;
-  border-radius: 16px;
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  background: rgba(250,250,250,0.9); z-index: 5; border-radius: 16px;
 }
 
 .spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid #EBEBEB;
-  border-top-color: #2ECC8F;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  width: 32px; height: 32px;
+  border: 3px solid #EBEBEB; border-top-color: #2ECC8F;
+  border-radius: 50%; animation: spin 0.8s linear infinite;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+@keyframes spin { to { transform: rotate(360deg); } }
 
-.loading p {
-  font-size: 14px;
-  color: #999;
-}
+.loading p { font-size: 14px; color: #999; }
 
 .view-buttons {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-  margin-top: 16px;
+  display: flex; justify-content: center; gap: 10px; margin-top: 14px;
 }
 
-.btn-sm {
-  padding: 8px 20px;
-  font-size: 13px;
-}
+.btn-sm { padding: 7px 18px; font-size: 13px; }
 </style>
