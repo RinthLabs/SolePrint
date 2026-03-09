@@ -211,10 +211,18 @@ export async function processImage(imageElement, options = {}) {
   // Step 7: Ray-cast from center to find shoe outline
   // ─────────────────────────────────────────────
   const rayCount = 720  // 0.5° resolution for smoother outline
-  const minRadiusPx = 20 * pxPerMm  // skip inner 20mm (fiducial region)
+  // minRadius: must clear the N/S tip squares (center at 20mm, half-size 4mm → edge at 24mm).
+  // Use 30mm with a generous margin so diagonal rays also skip past the marker corners.
+  const minRadiusPx = 30 * pxPerMm
   const maxRadiusPx = 180 * pxPerMm // max shoe half-length ~180mm
   const outlineThreshold = options.outlineThreshold || 110
   const stepPx = 0.5  // sub-pixel stepping along ray
+
+  // Marker exclusion zones — expanded bboxes around each tip square.
+  // Any ray hit inside these zones is skipped; the ray continues outward.
+  // This handles diagonal rays that clip through a marker corner even beyond minRadius.
+  const markerExclRadius = Math.max(north.width, north.height, east.width, east.height) * 0.9
+  const markerCenters = [north, south, east, west]
 
   const hitPoints = []
 
@@ -230,6 +238,11 @@ export async function processImage(imageElement, options = {}) {
       const py = Math.round(centerY + dy * r)
       if (px < 1 || px >= width - 1 || py < 1 || py >= height - 1) break
       if (graySmoothed[py * width + px] < outlineThreshold) {
+        // Skip if the hit falls inside one of the 4 tip marker regions
+        const inMarker = markerCenters.some(
+          m => Math.hypot(px - m.x, py - m.y) < markerExclRadius
+        )
+        if (inMarker) continue
         hitX = centerX + dx * r
         hitY = centerY + dy * r
         break
