@@ -17,10 +17,10 @@ function showToast(msg, type = 'success') {
 
 // Sole parameter sliders
 const sliders = [
-  { key: 'thickness',    label: 'Thickness',    min: 6,  max: 18, unit: 'mm' },
-  { key: 'edgeRoundness',label: 'Edge Roundness',min: 0, max: 10, unit: ''   },
-  { key: 'treadDepth',   label: 'Tread Depth',  min: 0,  max: 8,  unit: 'mm' },
-  { key: 'heelLift',     label: 'Heel Lift',    min: 0,  max: 15, unit: 'mm' },
+  { key: 'thickness',     label: 'Thickness',      min: 6,  max: 18, unit: 'mm', tip: 'Overall sole depth from top to bottom.' },
+  { key: 'edgeRoundness', label: 'Edge Roundness',  min: 0,  max: 10, unit: '',   tip: 'Bevel on the perimeter edge.' },
+  { key: 'treadDepth',    label: 'Tread Grooves',   min: 0,  max: 8,  unit: '',   tip: 'Horizontal groove lines on the sole bottom. Visual approximation — actual cuts need post-processing in your slicer.' },
+  { key: 'heelLift',      label: 'Heel Wedge',      min: 0,  max: 15, unit: 'mm', tip: 'Adds a raised wedge to the back half of the sole. Rotate in your slicer so the heel side aligns correctly.' },
 ]
 
 function updateParam(key, val) {
@@ -85,6 +85,7 @@ function startOver() {
               :max="s.max"
               @input="updateParam(s.key, +$event.target.value)"
             />
+            <p class="slider-tip">{{ s.tip }}</p>
           </div>
         </div>
 
@@ -216,6 +217,13 @@ h3 {
 }
 
 .slider-group:last-child { margin-bottom: 0; }
+
+.slider-tip {
+  font-size: 11px;
+  color: #bbb;
+  margin-top: 5px;
+  line-height: 1.5;
+}
 
 .slider-group label {
   display: flex;
