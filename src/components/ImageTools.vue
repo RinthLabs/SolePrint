@@ -1,11 +1,11 @@
 <script setup>
-import { ref, watch, onMounted, nextTick } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useSoleStore } from '../stores/soleStore'
 
 const props = defineProps({
   detecting:       { type: Boolean, default: false },
   autoDetecting:   { type: Boolean, default: false }, // debounce in-progress
-  detectionCanvas: { type: Object,  default: null },
+  detectionCanvas: { type: String,  default: null },  // data URL string
   detectionError:  { type: String,  default: null },
   detectionSize:   { type: String,  default: null },
 })
@@ -13,19 +13,8 @@ const props = defineProps({
 const emit = defineEmits(['process', 'continue'])
 
 const store = useSoleStore()
-const previewCanvas  = ref(null)
-const debugCanvasWrap = ref(null)
+const previewCanvas = ref(null)
 const localAdj = ref({ ...store.imageAdjustments })
-
-// Mount detection canvas when it arrives
-watch(() => props.detectionCanvas, async (canvas) => {
-  await nextTick()
-  if (debugCanvasWrap.value && canvas) {
-    debugCanvasWrap.value.innerHTML = ''
-    Object.assign(canvas.style, { width: '100%', height: 'auto', borderRadius: '10px', display: 'block' })
-    debugCanvasWrap.value.appendChild(canvas)
-  }
-})
 
 function applyAdjustments() {
   if (!store.uploadedImage || !previewCanvas.value) return
@@ -85,8 +74,9 @@ const hasResult = () => props.detectionSize && !props.detectionError
           <p>Detecting outline…</p>
         </div>
 
-        <!-- Detection result canvas -->
-        <div v-else-if="detectionCanvas" ref="debugCanvasWrap" class="canvas-result">
+        <!-- Detection result image (data URL from debug canvas) -->
+        <div v-else-if="detectionCanvas" class="canvas-result">
+          <img :src="detectionCanvas" class="detection-img" />
           <!-- Auto-detect debounce overlay -->
           <div v-if="autoDetecting" class="updating-overlay">
             <div class="spinner-sm"></div>
@@ -228,6 +218,13 @@ const hasResult = () => props.detectionSize && !props.detectionError
   position: relative;
   border-radius: 12px;
   overflow: hidden;
+}
+
+.detection-img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 10px;
 }
 
 .updating-overlay {

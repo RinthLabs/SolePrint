@@ -53,7 +53,8 @@ async function onProcess() {
         scaleMmPerPx: result.scaleMmPerPx
       })
       detectionSize.value   = `${result.widthMm}mm × ${result.heightMm}mm`
-      detectionCanvas.value = result.debugCanvas
+      // Convert to data URL — lets Vue manage the <img> natively (avoids direct DOM manipulation)
+      detectionCanvas.value = result.debugCanvas.toDataURL('image/jpeg', 0.88)
     }
   } catch (e) {
     detectionError.value  = 'Processing failed: ' + e.message
