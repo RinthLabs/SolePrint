@@ -1,5 +1,5 @@
 <script setup>
-import { ref, nextTick } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSoleStore } from '../stores/soleStore'
 import StepIndicator from '../components/StepIndicator.vue'
@@ -12,75 +12,53 @@ const router = useRouter()
 const store = useSoleStore()
 const instructionsOpen = ref(false)
 
-const processing = ref(false)
-const processingError = ref(null)
-const processSuccess = ref(false)
-const detectedSize = ref('')
-const debugCanvasContainer = ref(null)
+// Detection state — passed as props into ImageTools
+const detecting      = ref(false)
+const detectionCanvas = ref(null)
+const detectionError  = ref(null)
+const detectionSize   = ref(null)
 
-async function onContinue() {
-  if (!store.uploadedImage) {
-    router.push('/preview')
-    return
-  }
+async function onProcess() {
+  if (!store.uploadedImage) return
 
-  processing.value = true
-  processingError.value = null
-  processSuccess.value = false
+  detecting.value      = true
+  detectionCanvas.value = null
+  detectionError.value  = null
+  detectionSize.value   = null
 
   try {
     const img = new Image()
     img.src = store.uploadedImage
-    await new Promise((resolve, reject) => {
-      img.onload = resolve
-      img.onerror = reject
-    })
+    await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject })
 
-    const result = await processImage(img)
+    const adj = store.imageAdjustments
+    const result = await processImage(img, {
+      blurRadius:        adj.blur       || 0,
+      fidThreshold:      80,
+      outlineThreshold:  110,
+    })
 
     if (result.error) {
-      processingError.value = result.error
-      processing.value = false
-      return
-    }
-
-    store.setDetectedOutline({
-      svgPath: result.svgPath,
-      widthMm: result.widthMm,
-      heightMm: result.heightMm,
-      scaleMmPerPx: result.scaleMmPerPx
-    })
-
-    detectedSize.value = `${result.widthMm}mm × ${result.heightMm}mm`
-    processSuccess.value = true
-    processing.value = false
-
-    await nextTick()
-    if (debugCanvasContainer.value && result.debugCanvas) {
-      debugCanvasContainer.value.innerHTML = ''
-      result.debugCanvas.style.width = '100%'
-      result.debugCanvas.style.height = 'auto'
-      result.debugCanvas.style.borderRadius = '12px'
-      debugCanvasContainer.value.appendChild(result.debugCanvas)
+      detectionError.value = result.error
+    } else {
+      store.setDetectedOutline({
+        svgPath:     result.svgPath,
+        widthMm:     result.widthMm,
+        heightMm:    result.heightMm,
+        scaleMmPerPx: result.scaleMmPerPx
+      })
+      detectionSize.value   = `${result.widthMm}mm × ${result.heightMm}mm`
+      detectionCanvas.value = result.debugCanvas
     }
   } catch (e) {
-    processingError.value = 'Processing failed: ' + e.message
-    processing.value = false
+    detectionError.value = 'Processing failed: ' + e.message
+  } finally {
+    detecting.value = false
   }
 }
 
-function onContinueToPreview() {
+function onContinue() {
   router.push('/preview')
-}
-
-function onAdjustManually() {
-  store.detectedSvgPath = null
-  router.push('/preview')
-}
-
-function onRetry() {
-  processingError.value = null
-  processSuccess.value = false
 }
 </script>
 
@@ -92,7 +70,7 @@ function onRetry() {
       <h2>Upload Your Sole Tracing</h2>
       <p class="subtitle">Scan your shoe sole tracing and upload to get started.</p>
 
-      <!-- Download Template Button -->
+      <!-- Download Template -->
       <div class="template-section">
         <button class="btn-template" @click="downloadTemplate">
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
@@ -105,33 +83,17 @@ function onRetry() {
 
       <UploadZone />
 
-      <!-- Processing overlay -->
-      <div v-if="processing" class="processing-overlay">
-        <div class="spinner"></div>
-        <p>Detecting scale markers...</p>
-      </div>
+      <!-- Image tools + detection — all in one card -->
+      <ImageTools
+        :detecting="detecting"
+        :detectionCanvas="detectionCanvas"
+        :detectionError="detectionError"
+        :detectionSize="detectionSize"
+        @process="onProcess"
+        @continue="onContinue"
+      />
 
-      <!-- Error state -->
-      <div v-if="processingError" class="detection-error">
-        <p class="error-text">{{ processingError }}</p>
-        <button class="btn-ghost" @click="onRetry">Try again</button>
-      </div>
-
-      <!-- Success state -->
-      <div v-if="processSuccess" class="detection-success">
-        <div class="success-banner">
-          <span class="check">&#10003;</span> Scale detected &mdash; {{ detectedSize }} sole
-        </div>
-        <div ref="debugCanvasContainer" class="debug-canvas-wrap"></div>
-        <div class="success-actions">
-          <button class="btn-primary" @click="onContinueToPreview">Looks good &mdash; Continue</button>
-          <button class="btn-ghost" @click="onAdjustManually">Adjust Manually</button>
-        </div>
-      </div>
-
-      <!-- Only show ImageTools if not in detection flow -->
-      <ImageTools v-if="!processing && !processSuccess && !processingError" @continue="onContinue" />
-
+      <!-- How-to accordion -->
       <div class="instructions">
         <button class="instructions-toggle" @click="instructionsOpen = !instructionsOpen">
           <span>How to get a good tracing</span>
@@ -142,11 +104,12 @@ function onRetry() {
         <transition name="slide">
           <ol v-if="instructionsOpen" class="instructions-list">
             <li>Download and print the SolePrint template at 100% scale</li>
-            <li>Place your shoe sole-down inside the dashed border</li>
+            <li>Place your shoe sole-down, centered on the four black squares</li>
             <li>Trace around the shoe with a BLACK marker</li>
-            <li>Trace the INSIDE of the marker line (the line is 3-5mm, trace its inner edge)</li>
+            <li>Trace the INSIDE of the marker line for the most accurate fit</li>
+            <li>Lift the shoe — both the squares and outline should now be visible</li>
             <li>Scan on a flatbed scanner for best results (photo from directly above as a fallback)</li>
-            <li>Upload the scan here — scale is detected automatically from the crosshair</li>
+            <li>Upload here and click <strong>Detect Outline</strong>. Adjust sliders if the first attempt misses edges.</li>
           </ol>
         </transition>
       </div>
@@ -209,81 +172,6 @@ h2 {
   margin-top: 8px;
 }
 
-.processing-overlay {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 40px;
-  margin-top: 16px;
-  background: #F5F5F5;
-  border-radius: 16px;
-}
-
-.processing-overlay .spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid #EBEBEB;
-  border-top-color: #2ECC8F;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.processing-overlay p {
-  font-size: 14px;
-  color: #999;
-}
-
-.detection-error {
-  text-align: center;
-  padding: 24px;
-  margin-top: 16px;
-  background: #FFF5F5;
-  border-radius: 16px;
-}
-
-.error-text {
-  color: #E74C3C;
-  font-size: 14px;
-  margin-bottom: 12px;
-}
-
-.detection-success {
-  margin-top: 16px;
-}
-
-.success-banner {
-  background: #E8F8F0;
-  color: #1A8A5C;
-  padding: 14px 20px;
-  border-radius: 12px;
-  font-size: 15px;
-  font-weight: 600;
-  text-align: center;
-}
-
-.success-banner .check {
-  color: #2ECC8F;
-  font-weight: 700;
-}
-
-.debug-canvas-wrap {
-  margin-top: 16px;
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.success-actions {
-  display: flex;
-  gap: 12px;
-  margin-top: 16px;
-  justify-content: center;
-}
-
 .instructions {
   margin-top: 24px;
   background: #fff;
@@ -304,17 +192,10 @@ h2 {
   transition: color 200ms ease;
 }
 
-.instructions-toggle:hover {
-  color: #2ECC8F;
-}
+.instructions-toggle:hover { color: #2ECC8F; }
 
-.chevron {
-  transition: transform 200ms ease;
-}
-
-.chevron.open {
-  transform: rotate(180deg);
-}
+.chevron { transition: transform 200ms ease; }
+.chevron.open { transform: rotate(180deg); }
 
 .instructions-list {
   padding: 0 24px 20px 44px;
@@ -336,14 +217,7 @@ h2 {
 }
 
 .slide-enter-from,
-.slide-leave-to {
-  opacity: 0;
-  max-height: 0;
-}
-
+.slide-leave-to { opacity: 0; max-height: 0; }
 .slide-enter-to,
-.slide-leave-from {
-  opacity: 1;
-  max-height: 300px;
-}
+.slide-leave-from { opacity: 1; max-height: 400px; }
 </style>

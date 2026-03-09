@@ -7,7 +7,8 @@ export const useSoleStore = defineStore('sole', {
       rotate: 0,
       brightness: 100,
       contrast: 100,
-      threshold: 128
+      threshold: 128,
+      blur: 0
     },
     params: {
       thickness: 12,
@@ -43,7 +44,7 @@ export const useSoleStore = defineStore('sole', {
     },
     reset() {
       this.uploadedImage = null
-      this.imageAdjustments = { rotate: 0, brightness: 100, contrast: 100, threshold: 128 }
+      this.imageAdjustments = { rotate: 0, brightness: 100, contrast: 100, threshold: 128, blur: 0 }
       this.params = { thickness: 12, edgeRoundness: 4, treadDepth: 3, heelLift: 5 }
       this.previewReady = false
       this.exportReady = false

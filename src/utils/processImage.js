@@ -41,12 +41,18 @@ export async function processImage(imageElement, options = {}) {
   }
 
   // ─────────────────────────────────────────────
+  // Step 1.5: Optional blur (smooths marker edges, bridges small gaps)
+  // ─────────────────────────────────────────────
+  const blurRadius = options.blurRadius || 0
+  const graySmoothed = blurRadius > 0 ? boxBlur(gray, width, height, blurRadius) : gray
+
+  // ─────────────────────────────────────────────
   // Step 2: Binary threshold (dark = 1)
   // ─────────────────────────────────────────────
   const fidThreshold = options.fidThreshold || 80
   const binary = new Uint8Array(width * height)
   for (let i = 0; i < gray.length; i++) {
-    binary[i] = gray[i] < fidThreshold ? 1 : 0
+    binary[i] = graySmoothed[i] < fidThreshold ? 1 : 0
   }
 
   // ─────────────────────────────────────────────
@@ -223,7 +229,7 @@ export async function processImage(imageElement, options = {}) {
       const px = Math.round(centerX + dx * r)
       const py = Math.round(centerY + dy * r)
       if (px < 1 || px >= width - 1 || py < 1 || py >= height - 1) break
-      if (gray[py * width + px] < outlineThreshold) {
+      if (graySmoothed[py * width + px] < outlineThreshold) {
         hitX = centerX + dx * r
         hitY = centerY + dy * r
         break
@@ -260,11 +266,24 @@ export async function processImage(imageElement, options = {}) {
     }
   }
 
-  // Outlier rejection: remove points whose radius deviates greatly from their neighbors
+  // Local angular-window outlier rejection.
+  // Compare each hit to its angular neighbors within ±30° instead of the global median.
+  // Rectangular/oval outlines have corners with much larger radii than flat sides — a global
+  // median filter wrongly rejects those valid corner points. Local comparison handles this.
   const radii = validPts.map(p => Math.hypot(p.x - centerX, p.y - centerY))
-  const sortedR = [...radii].sort((a, b) => a - b)
-  const medR = sortedR[Math.floor(sortedR.length / 2)]
-  const filtered = validPts.filter((_, i) => Math.abs(radii[i] - medR) < medR * 0.45)
+  const windowHalf = Math.max(10, Math.floor(validPts.length * (30 / 360)))
+  const filtered = validPts.filter((_, i) => {
+    const localRs = []
+    for (let d = -windowHalf; d <= windowHalf; d++) {
+      const j = (i + d + validPts.length) % validPts.length
+      localRs.push(radii[j])
+    }
+    localRs.sort((a, b) => a - b)
+    const localMed = localRs[Math.floor(localRs.length / 2)]
+    // Only reject hits that are shorter than 35% of the local median —
+    // those are spurious blobs (dust, ink splatter) inside the shoe region.
+    return radii[i] > localMed * 0.35
+  })
 
   if (filtered.length < 60) {
     return {
@@ -459,6 +478,41 @@ function scorePlusPattern(group) {
   }
 
   return best
+}
+
+/**
+ * Fast separable box blur on a Uint8Array grayscale image.
+ * Equivalent to blurring with a (2r+1)×(2r+1) box kernel.
+ */
+function boxBlur(gray, width, height, radius) {
+  if (radius <= 0) return gray
+  const horiz = new Float32Array(gray.length)
+  const out = new Uint8Array(gray.length)
+
+  // Horizontal pass
+  for (let y = 0; y < height; y++) {
+    let sum = 0, count = 0
+    // Seed with left-edge pixels
+    for (let x = 0; x < Math.min(radius, width); x++) { sum += gray[y * width + x]; count++ }
+    for (let x = 0; x < width; x++) {
+      if (x + radius < width)    { sum += gray[y * width + x + radius];     count++ }
+      if (x - radius - 1 >= 0)   { sum -= gray[y * width + x - radius - 1]; count-- }
+      horiz[y * width + x] = sum / count
+    }
+  }
+
+  // Vertical pass
+  for (let x = 0; x < width; x++) {
+    let sum = 0, count = 0
+    for (let y = 0; y < Math.min(radius, height); y++) { sum += horiz[y * width + x]; count++ }
+    for (let y = 0; y < height; y++) {
+      if (y + radius < height)   { sum += horiz[(y + radius) * width + x];     count++ }
+      if (y - radius - 1 >= 0)   { sum -= horiz[(y - radius - 1) * width + x]; count-- }
+      out[y * width + x] = Math.round(sum / count)
+    }
+  }
+
+  return out
 }
 
 /**
