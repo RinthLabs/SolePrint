@@ -7,8 +7,9 @@ import { OBJExporter } from 'three/addons/exporters/OBJExporter.js'
 import { useSoleStore } from '../stores/soleStore'
 
 const props = defineProps({
-  height: { type: Number, default: 500 },
-  svgPath: { type: String, default: null }
+  height:   { type: Number,  default: 500 },
+  svgPath:  { type: String,  default: null },
+  mirrored: { type: Boolean, default: false },
 })
 
 const store = useSoleStore()
@@ -224,6 +225,15 @@ function addSoleToScene() {
   soleMesh.rotation.x = -Math.PI / 2
   treadGroup.rotation.x = -Math.PI / 2
 
+  // Mirror: flip X axis. DoubleSide material so normals still render correctly in viewer.
+  const mirrorX = props.mirrored ? -1 : 1
+  soleMesh.scale.x    = mirrorX
+  treadGroup.scale.x  = mirrorX
+  if (props.mirrored) {
+    soleMesh.material.side    = THREE.DoubleSide
+    treadGroup.traverse(c => { if (c.material) c.material.side = THREE.DoubleSide })
+  }
+
   scene.add(soleMesh)
   scene.add(treadGroup)
 }
@@ -250,8 +260,9 @@ function onResize() {
   renderer.setSize(w, props.height)
 }
 
-watch(() => store.params, addSoleToScene, { deep: true })
-watch(() => props.svgPath, addSoleToScene)
+watch(() => store.params,    addSoleToScene, { deep: true })
+watch(() => props.svgPath,   addSoleToScene)
+watch(() => props.mirrored,  addSoleToScene)
 
 onMounted(() => { init(); window.addEventListener('resize', onResize) })
 onUnmounted(() => { cancelAnimationFrame(animId); window.removeEventListener('resize', onResize); renderer?.dispose() })
@@ -265,15 +276,27 @@ function getScaledGeometry() {
   const maxDim   = Math.max(widthMm, heightMm)
   const xyScale  = maxDim / 10
   const zScale   = store.params.thickness / (store.params.thickness * 0.15)
+  const mirrorX  = props.mirrored ? -1 : 1
 
   const geom = soleMesh.geometry.clone()
   const pos  = geom.attributes.position
   for (let i = 0; i < pos.count; i++) {
-    pos.setX(i, pos.getX(i) * xyScale)
+    pos.setX(i, pos.getX(i) * xyScale * mirrorX)
     pos.setY(i, pos.getY(i) * xyScale)
     pos.setZ(i, pos.getZ(i) * zScale)
   }
   pos.needsUpdate = true
+
+  // When mirrored, X negation flips winding order → normals point inward.
+  // Fix by reversing every triangle's vertex order.
+  if (props.mirrored && geom.index) {
+    const idx = geom.index.array
+    for (let i = 0; i < idx.length; i += 3) {
+      const tmp = idx[i + 1]; idx[i + 1] = idx[i + 2]; idx[i + 2] = tmp
+    }
+    geom.index.needsUpdate = true
+  }
+
   geom.computeVertexNormals()
   return geom
 }

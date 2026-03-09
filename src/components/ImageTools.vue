@@ -14,6 +14,7 @@ const emit = defineEmits(['process', 'continue'])
 
 const store = useSoleStore()
 const previewCanvas = ref(null)
+const qualityOpen   = ref(false)
 const localAdj = ref({ ...store.imageAdjustments })
 
 function applyAdjustments() {
@@ -55,7 +56,7 @@ watch(localAdj, () => {
 onMounted(() => { applyAdjustments() })
 
 function resetAll() {
-  localAdj.value = { rotate: 0, brightness: 100, contrast: 100, threshold: 128, blur: 0 }
+  localAdj.value = { rotate: 0, brightness: 100, contrast: 100, threshold: 128, blur: 0, simplify: 1.5, smooth: 5 }
 }
 
 // Status: what to show at top of controls column
@@ -120,7 +121,7 @@ const hasResult = () => props.detectionSize && !props.detectionError
           Adjust sliders, then click <strong>Detect Outline</strong>
         </div>
 
-        <!-- Sliders -->
+        <!-- Image adjustment sliders -->
         <div class="sliders">
           <div class="slider-group">
             <label>Rotate <span>{{ localAdj.rotate }}°</span></label>
@@ -135,7 +136,10 @@ const hasResult = () => props.detectionSize && !props.detectionError
             <input type="range" v-model.number="localAdj.contrast" min="50" max="200" />
           </div>
           <div class="slider-group">
-            <label>Threshold <span>{{ localAdj.threshold }}</span></label>
+            <label>
+              Threshold <span>{{ localAdj.threshold }}</span>
+              <small class="hint">outline darkness cutoff</small>
+            </label>
             <input type="range" v-model.number="localAdj.threshold" min="0" max="255" />
           </div>
           <div class="slider-group">
@@ -144,6 +148,33 @@ const hasResult = () => props.detectionSize && !props.detectionError
               <small class="hint">bridges marker gaps</small>
             </label>
             <input type="range" v-model.number="localAdj.blur" min="0" max="8" step="1" />
+          </div>
+        </div>
+
+        <!-- Outline quality — collapsible -->
+        <div class="quality-section">
+          <button class="quality-toggle" @click="qualityOpen = !qualityOpen">
+            <span>Outline Quality</span>
+            <svg :class="['chevron', { open: qualityOpen }]" width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <div v-if="qualityOpen" class="quality-body">
+            <div class="slider-group">
+              <label>
+                Detail Level <span>{{ localAdj.simplify }}mm</span>
+                <small class="hint">↓ more points / ↑ fewer points</small>
+              </label>
+              <input type="range" v-model.number="localAdj.simplify" min="0.2" max="8" step="0.1" />
+            </div>
+            <div class="slider-group">
+              <label>
+                Smoothing <span>{{ localAdj.smooth }}/10</span>
+                <small class="hint">↑ softer bezier curves</small>
+              </label>
+              <input type="range" v-model.number="localAdj.smooth" min="0" max="10" step="1" />
+            </div>
+            <p class="quality-note">Changes take effect on next detection.</p>
           </div>
         </div>
 
@@ -303,6 +334,44 @@ const hasResult = () => props.detectionSize && !props.detectionError
 .hint { font-size: 10px; color: #bbb; font-weight: 400; }
 
 input[type=range] { width: 100%; }
+
+/* Quality section */
+.quality-section {
+  border-top: 1px solid #F0F0F0;
+  padding-top: 10px;
+}
+
+.quality-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  font-size: 12px;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 0;
+  transition: color 200ms ease;
+}
+
+.quality-toggle:hover { color: #2ECC8F; }
+
+.chevron { transition: transform 200ms ease; flex-shrink: 0; }
+.chevron.open { transform: rotate(180deg); }
+
+.quality-body {
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.quality-note {
+  font-size: 11px;
+  color: #ccc;
+  margin-top: -4px;
+}
 
 /* Actions */
 .actions {

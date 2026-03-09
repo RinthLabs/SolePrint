@@ -8,7 +8,8 @@ import ToastNotification from '../components/ToastNotification.vue'
 
 const router = useRouter()
 const store  = useSoleStore()
-const viewer = ref(null)
+const viewer   = ref(null)
+const mirrored = ref(false)
 
 const toast = ref({ message: '', visible: false, type: 'success' })
 function showToast(msg, type = 'success') {
@@ -65,7 +66,7 @@ function startOver() {
       <p class="subtitle">Orbit to inspect, adjust parameters, then download your sole.</p>
 
       <!-- ── Big 3D Viewer ── -->
-      <SoleViewer ref="viewer" :height="460" :svgPath="store.detectedSvgPath" />
+      <SoleViewer ref="viewer" :height="460" :svgPath="store.detectedSvgPath" :mirrored="mirrored" />
 
       <!-- ── Controls row ── -->
       <div class="controls-row">
@@ -116,6 +117,32 @@ function startOver() {
 
           <div class="section">
             <h3>Export</h3>
+
+            <!-- Mirror toggle — trace one foot, flip for the other -->
+            <div class="mirror-row">
+              <button
+                :class="['mirror-btn', { active: !mirrored }]"
+                @click="mirrored = false"
+                title="Original orientation"
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 2v12M2 8h4M2 5l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Original
+              </button>
+              <button
+                :class="['mirror-btn', { active: mirrored }]"
+                @click="mirrored = true"
+                title="Mirrored — for the opposite foot"
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 2v12M14 8h-4M14 5l-3 3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                Mirrored
+              </button>
+            </div>
+            <p class="mirror-hint">Trace one shoe — mirror for the other foot.</p>
+
             <div class="export-buttons">
               <button class="btn-primary export-btn" @click="doExportSTL">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -277,6 +304,44 @@ h3 {
   font-size: 20px;
   font-weight: 700;
   color: #1A1A1A;
+}
+
+/* Mirror toggle */
+.mirror-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.mirror-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1.5px solid #E0E0E0;
+  font-size: 13px;
+  font-weight: 500;
+  color: #888;
+  background: #F8F8F8;
+  cursor: pointer;
+  transition: all 180ms ease;
+}
+
+.mirror-btn.active {
+  border-color: #2ECC8F;
+  color: #2ECC8F;
+  background: #F0FBF6;
+  font-weight: 600;
+}
+
+.mirror-hint {
+  font-size: 11px;
+  color: #bbb;
+  margin-bottom: 14px;
+  line-height: 1.4;
 }
 
 .export-buttons {

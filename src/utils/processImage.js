@@ -347,7 +347,8 @@ export async function processImage(imageElement, options = {}) {
     return [f, l]
   }
 
-  const simplified = rdp(mmPts, 1.2)
+  const epsilon = (options.simplifyEpsilon !== undefined) ? options.simplifyEpsilon : 1.2
+  const simplified = rdp(mmPts, Math.max(0.1, epsilon))
 
   // Catmull-Rom → cubic Bezier SVG path
   function catmullRomSVG(pts, tension = 0.5) {
@@ -370,7 +371,8 @@ export async function processImage(imageElement, options = {}) {
     return path + ' Z'
   }
 
-  const svgPath = catmullRomSVG(simplified, 0.5)
+  const tension = (options.smoothTension !== undefined) ? options.smoothTension : 0.5
+  const svgPath = catmullRomSVG(simplified, Math.max(0, Math.min(1, tension)))
 
   // ─────────────────────────────────────────────
   // Step 9: Debug canvas

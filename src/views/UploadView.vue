@@ -36,10 +36,29 @@ async function onProcess() {
     await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject })
 
     const adj = store.imageAdjustments
-    const result = await processImage(img, {
+
+    // Apply user adjustments (rotate, brightness, contrast) to a full-res offscreen canvas.
+    // This ensures the detection sees exactly what the user sees in the preview.
+    const offscreen = document.createElement('canvas')
+    offscreen.width  = img.naturalWidth
+    offscreen.height = img.naturalHeight
+    const offCtx = offscreen.getContext('2d')
+    offCtx.save()
+    offCtx.translate(offscreen.width / 2, offscreen.height / 2)
+    offCtx.rotate((adj.rotate * Math.PI) / 180)
+    offCtx.filter = `brightness(${adj.brightness}%) contrast(${adj.contrast}%)`
+    offCtx.drawImage(img, -offscreen.width / 2, -offscreen.height / 2, offscreen.width, offscreen.height)
+    offCtx.restore()
+
+    // smooth UI value 0-10 → Catmull-Rom tension 1.0-0.0 (higher UI = smoother curve)
+    const smoothTension = 1 - (adj.smooth || 5) / 10
+
+    const result = await processImage(offscreen, {
       blurRadius:       adj.blur || 0,
       fidThreshold:     80,
-      outlineThreshold: 110,
+      outlineThreshold: adj.threshold || 110,
+      simplifyEpsilon:  adj.simplify || 1.5,
+      smoothTension,
     })
 
     if (result.error) {
