@@ -104,14 +104,20 @@ watch(() => store.imageAdjustments, () => {
   }, 700)
 }, { deep: true })
 
-// Reset detection state when a new image is uploaded
-watch(() => store.uploadedImage, () => {
+// Reset detection state when a new image is uploaded, then auto-detect once
+watch(() => store.uploadedImage, async (newVal) => {
   clearTimeout(debounceTimer)
   detecting.value       = false
   autoDetecting.value   = false
   detectionCanvas.value = null
   detectionError.value  = null
   detectionSize.value   = null
+
+  // Auto-run detection on upload (one-shot with default settings).
+  // After this, subsequent slider changes trigger the debounced auto-detect.
+  if (newVal) {
+    await onProcess()
+  }
 })
 
 function onContinue() {
