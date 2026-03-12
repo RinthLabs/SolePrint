@@ -38,27 +38,44 @@ async function onProcess() {
 
     const adj = store.imageAdjustments
 
-    // Apply user adjustments (rotate, brightness, contrast) to a full-res offscreen canvas.
+    // Apply user adjustments (levels) to a full-res offscreen canvas.
     // This ensures the detection sees exactly what the user sees in the preview.
     const offscreen = document.createElement('canvas')
-    offscreen.width  = img.naturalWidth
+    offscreen.width = img.naturalWidth
     offscreen.height = img.naturalHeight
-    const offCtx = offscreen.getContext('2d')
-    offCtx.save()
-    offCtx.translate(offscreen.width / 2, offscreen.height / 2)
-    offCtx.rotate((adj.rotate * Math.PI) / 180)
-    offCtx.filter = `brightness(${adj.brightness}%) contrast(${adj.contrast}%)`
-    offCtx.drawImage(img, -offscreen.width / 2, -offscreen.height / 2, offscreen.width, offscreen.height)
-    offCtx.restore()
+    const offCtx = offscreen.getContext('2d', { willReadFrequently: true })
+
+    offCtx.drawImage(img, 0, 0, offscreen.width, offscreen.height)
+
+    // Levels: remap grayscale 0-255 using black/white points
+    const bp = Math.max(0, Math.min(254, adj.blackPoint ?? 0))
+    const wp = Math.max(bp + 1, Math.min(255, adj.whitePoint ?? 255))
+    const denom = wp - bp
+
+    const id = offCtx.getImageData(0, 0, offscreen.width, offscreen.height)
+    for (let i = 0; i < id.data.length; i += 4) {
+      const r = id.data[i], g = id.data[i + 1], b = id.data[i + 2]
+      const v = Math.round(r * 0.299 + g * 0.587 + b * 0.114)
+      let n = (v - bp) / denom
+      if (n < 0) n = 0
+      if (n > 1) n = 1
+      const o = Math.round(n * 255)
+      id.data[i] = id.data[i + 1] = id.data[i + 2] = o
+    }
+    offCtx.putImageData(id, 0, 0)
 
     // smooth UI value 0-10 → Catmull-Rom tension 1.0-0.0 (higher UI = smoother curve)
-    const smoothTension = 1 - (adj.smooth || 5) / 10
+    const smoothTension = 1 - (adj.smooth ?? 5) / 10
+
+    // Detail 0-100 → RDP epsilon in mm (lower epsilon = more detail)
+    const detail = Math.max(0, Math.min(100, adj.detail ?? 64))
+    const simplifyEpsilon = 8 - (detail / 100) * 7.8  // 8 → 0.2
 
     const result = await processImage(offscreen, {
-      blurRadius:       adj.blur || 0,
-      fidThreshold:     80,
-      outlineThreshold: adj.threshold || 110,
-      simplifyEpsilon:  adj.simplify || 1.5,
+      blurRadius: adj.blur ?? 0,
+      fidThreshold: 80,
+      outlineThreshold: adj.threshold ?? 110,
+      simplifyEpsilon,
       smoothTension,
     })
 

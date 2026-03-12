@@ -192,7 +192,7 @@ export async function processImage(imageElement, options = {}) {
     }
   }
 
-  if (!bestGroup || bestScore > 0.5) {
+  if (!bestGroup || bestScore > 0.75) {
     return {
       error: 'Could not identify the + crosshair pattern. ' +
              'Make sure all 4 tip squares of the crosshair are visible in the photo.'
@@ -202,7 +202,7 @@ export async function processImage(imageElement, options = {}) {
   // ─────────────────────────────────────────────
   // Step 6: Assign N/S/E/W, compute center + scale
   // ─────────────────────────────────────────────
-  const { north, south, east, west, centerX, centerY, scaleMmPerPx, warnings } =
+  const { north, south, east, west, centerX, centerY, scaleMmPerPx, rotationRad, rotationDeg, warnings } =
     assignMarkers(bestGroup)
 
   const pxPerMm = 1 / scaleMmPerPx
@@ -308,10 +308,19 @@ export async function processImage(imageElement, options = {}) {
   // ─────────────────────────────────────────────
   // Step 8: Convert to mm, simplify, smooth → SVG
   // ─────────────────────────────────────────────
-  const mmPts = filtered.map(p => ({
-    x: (p.x - centerX) * scaleMmPerPx,
-    y: (p.y - centerY) * scaleMmPerPx,
-  }))
+  const c = Math.cos(rotationRad)
+  const s = Math.sin(rotationRad)
+
+  // Convert px → mm, then de-rotate so the fiducial N/S axis is vertical.
+  // Rotation uses -rotationRad.
+  const mmPts = filtered.map(p => {
+    const dx = (p.x - centerX) * scaleMmPerPx
+    const dy = (p.y - centerY) * scaleMmPerPx
+    return {
+      x: dx * c + dy * s,
+      y: -dx * s + dy * c,
+    }
+  })
 
   // Bounding box
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
@@ -421,6 +430,7 @@ export async function processImage(imageElement, options = {}) {
   // svgPath is in mm, centered at origin; transform to pixel space for drawing.
   dctx.save()
   dctx.translate(centerX, centerY)
+  dctx.rotate(rotationRad) // svgPath is de-rotated; rotate back for overlay on original image
   dctx.scale(1 / scaleMmPerPx, 1 / scaleMmPerPx)
   dctx.strokeStyle = 'rgba(255, 50, 50, 0.95)'
   dctx.lineWidth = lw * 1.8 * scaleMmPerPx   // compensate for scale transform
@@ -435,6 +445,7 @@ export async function processImage(imageElement, options = {}) {
     heightMm: Math.round(heightMm * 10) / 10,
     centerX,
     centerY,
+    rotationDeg,
     warnings,
     debugCanvas,
   }
@@ -460,8 +471,8 @@ function scorePlusPattern(group) {
 
   for (const [[ai, bi], [ci, di]] of splits) {
     const a = group[ai], b = group[bi], c = group[ci], d = group[di]
-    const d1 = Math.hypot(a.x - b.x, a.y - b.y)  // one pair distance
-    const d2 = Math.hypot(c.x - d.x, c.y - d.y)  // other pair distance
+    const d1 = Math.hypot(a.x - b.x, a.y - b.y)
+    const d2 = Math.hypot(c.x - d.x, c.y - d.y)
     if (d1 < 1 || d2 < 1) continue
 
     // Which pair is N/S (longer) and which is E/W (shorter)?
@@ -473,22 +484,7 @@ function scorePlusPattern(group) {
     // Expect ratio ~2 (40mm vs 20mm)
     const ratio = longD / shortD
     const ratioErr = Math.abs(ratio - 2) / 2
-
-    if (ratioErr > 0.45) continue
-
-    // Long pair should be roughly vertical
-    const longAngle = Math.atan2(
-      Math.abs(longPair[1].y - longPair[0].y),
-      Math.abs(longPair[1].x - longPair[0].x)
-    )
-    const vertErr = Math.abs(longAngle - Math.PI / 2) / (Math.PI / 2)  // 0 = perfectly vertical
-
-    // Short pair should be roughly horizontal
-    const shortAngle = Math.atan2(
-      Math.abs(shortPair[1].y - shortPair[0].y),
-      Math.abs(shortPair[1].x - shortPair[0].x)
-    )
-    const horizErr = shortAngle / (Math.PI / 2)  // 0 = perfectly horizontal
+    if (ratioErr > 0.55) continue
 
     // Midpoints of the two pairs should be close (they share a center)
     const longMidX = (longPair[0].x + longPair[1].x) / 2
@@ -496,10 +492,17 @@ function scorePlusPattern(group) {
     const shortMidX = (shortPair[0].x + shortPair[1].x) / 2
     const shortMidY = (shortPair[0].y + shortPair[1].y) / 2
     const midDist = Math.hypot(longMidX - shortMidX, longMidY - shortMidY)
-    const midErr = midDist / longD  // normalized to long arm length
+    const midErr = midDist / longD
 
-    const score = ratioErr * 2 + vertErr * 0.5 + horizErr * 0.5 + midErr * 1.5
+    // Pairs should be close to perpendicular (rotation-invariant)
+    const v1x = longPair[1].x - longPair[0].x
+    const v1y = longPair[1].y - longPair[0].y
+    const v2x = shortPair[1].x - shortPair[0].x
+    const v2y = shortPair[1].y - shortPair[0].y
+    const denom = (Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y)) || 1
+    const orthErr = Math.abs((v1x * v2x + v1y * v2y) / denom) // 0=perfectly orthogonal
 
+    const score = ratioErr * 2 + midErr * 1.6 + orthErr * 0.8
     if (score < best) best = score
   }
 
@@ -566,11 +569,29 @@ function erodeBinary(binary, width, height, radius) {
  * and compute center + scale.
  */
 function assignMarkers(group) {
-  // Sort by y: topmost = North, bottommost = South, middle two = East/West
-  const byY = [...group].sort((a, b) => a.y - b.y)
-  const north = byY[0]
-  const south = byY[3]
-  const [west, east] = [byY[1], byY[2]].sort((a, b) => a.x - b.x)
+  // Robust N/S/E/W assignment at any rotation:
+  // 1) N/S pair is the longest distance (40mm)
+  // 2) Remaining pair is E/W (20mm)
+  const pts = [...group]
+
+  let bestLong = { i: 0, j: 1, d: -Infinity }
+  for (let i = 0; i < pts.length; i++) {
+    for (let j = i + 1; j < pts.length; j++) {
+      const d = Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y)
+      if (d > bestLong.d) bestLong = { i, j, d }
+    }
+  }
+
+  const longA = pts[bestLong.i]
+  const longB = pts[bestLong.j]
+  const shortPts = pts.filter((_, idx) => idx !== bestLong.i && idx !== bestLong.j)
+  const shortA = shortPts[0]
+  const shortB = shortPts[1]
+
+  const north = longA.y <= longB.y ? longA : longB
+  const south = longA.y <= longB.y ? longB : longA
+  const west = shortA.x <= shortB.x ? shortA : shortB
+  const east = shortA.x <= shortB.x ? shortB : shortA
 
   const centerX = (north.x + south.x + east.x + west.x) / 4
   const centerY = (north.y + south.y + east.y + west.y) / 4
@@ -582,19 +603,25 @@ function assignMarkers(group) {
   const pixNS = Math.hypot(north.x - south.x, north.y - south.y)
   const pixEW = Math.hypot(east.x - west.x, east.y - west.y)
 
-  const scaleFromNS = physNS / pixNS  // mm per pixel
+  const scaleFromNS = physNS / pixNS
   const scaleFromEW = physEW / pixEW
-
   const scaleMmPerPx = (scaleFromNS + scaleFromEW) / 2
+
+  // Rotation: angle to rotate by (-theta) so N→S axis becomes +Y.
+  // If the image is perfectly upright, vx=0, vy>0 => theta=0.
+  const vx = south.x - north.x
+  const vy = south.y - north.y
+  const rotationRad = Math.atan2(vx, vy)
+  const rotationDeg = (rotationRad * 180) / Math.PI
 
   const warnings = []
   if (Math.abs(scaleFromNS - scaleFromEW) / scaleMmPerPx > 0.06) {
     warnings.push(
-      `Scale discrepancy: N/S=${(physNS / pixNS).toFixed(4)}mm/px, ` +
-      `E/W=${(physEW / pixEW).toFixed(4)}mm/px. ` +
+      `Scale discrepancy: N/S=${scaleFromNS.toFixed(4)}mm/px, ` +
+      `E/W=${scaleFromEW.toFixed(4)}mm/px. ` +
       `Photo may not be perfectly overhead.`
     )
   }
 
-  return { north, south, east, west, centerX, centerY, scaleMmPerPx, warnings }
+  return { north, south, east, west, centerX, centerY, scaleMmPerPx, rotationRad, rotationDeg, warnings }
 }

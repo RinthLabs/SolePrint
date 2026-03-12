@@ -16,14 +16,24 @@ export function downloadTemplate() {
   // No connecting lines (they caused CCL to merge all 4 into one blob).
   const tipSize = 8
   doc.setFillColor(0, 0, 0)
-  // N — centered at (cx, cy - armLong)
-  doc.rect(cx - tipSize / 2, cy - armLong - tipSize / 2, tipSize, tipSize, 'F')
-  // S — centered at (cx, cy + armLong)
-  doc.rect(cx - tipSize / 2, cy + armLong - tipSize / 2, tipSize, tipSize, 'F')
-  // W — centered at (cx - armShort, cy)
-  doc.rect(cx - armShort - tipSize / 2, cy - tipSize / 2, tipSize, tipSize, 'F')
-  // E — centered at (cx + armShort, cy)
-  doc.rect(cx + armShort - tipSize / 2, cy - tipSize / 2, tipSize, tipSize, 'F')
+
+  // Rotate fiducial so the printable "working area" is larger (diagonal footprint).
+  // Requested by Ben: 37.7°
+  const theta = (37.7 * Math.PI) / 180
+  const ct = Math.cos(theta)
+  const st = Math.sin(theta)
+
+  const drawTip = (dx, dy) => {
+    const rx = dx * ct - dy * st
+    const ry = dx * st + dy * ct
+    doc.rect(cx + rx - tipSize / 2, cy + ry - tipSize / 2, tipSize, tipSize, 'F')
+  }
+
+  // N/S/E/W (relative to unrotated axes)
+  drawTip(0, -armLong)
+  drawTip(0, armLong)
+  drawTip(-armShort, 0)
+  drawTip(armShort, 0)
 
   // ── Light gray center guide (not detectable — well above threshold) ──
   // Visual-only cue so users know where to center their shoe.
@@ -77,19 +87,22 @@ export function downloadTemplate() {
   doc.setTextColor(155, 155, 155)
   doc.text('Verify print scale:', rightEdge, imperialY - barGap * 0.55, { align: 'right' })
 
-  // ── Minimal instructions — bottom left, light gray ────────
+  // ── Minimal instructions — next to the scale bars (bottom right) ─────
+  // Keep everything a user needs to verify print scale in one place.
   doc.setFontSize(6)
   doc.setFont('helvetica', 'normal')
-  doc.setTextColor(180, 180, 180)
+  doc.setTextColor(175, 175, 175)
   const lines = [
     'Print at 100% — do not scale to fit',
-    'Center shoe on +, trace outline, lift shoe',
-    'Scan and upload at soleprint.rinthlabs.com (photo as last resort)',
+    'Center shoe on marker, trace, lift shoe',
+    'Scan + upload at soleprint.rinthlabs.com',
   ]
-  const instX = 12
-  const instY = pageH - 22
+
+  // Right-aligned, stacked above the scale bars.
+  const instX = rightEdge
+  const instY = imperialY - 16
   lines.forEach((line, i) => {
-    doc.text(line, instX, instY + i * 4.5)
+    doc.text(line, instX, instY + i * 4.5, { align: 'right' })
   })
 
   // ── Website URL — very small, bottom right below scale bars ─

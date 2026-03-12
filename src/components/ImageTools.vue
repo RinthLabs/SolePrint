@@ -15,49 +15,159 @@ const emit = defineEmits(['process', 'continue', 'toggleAutoDetect'])
 
 const store = useSoleStore()
 const previewCanvas = ref(null)
-const qualityOpen   = ref(false)
+const histCanvas = ref(null)
+const histogram = ref(null) // Uint32Array[256]
 const localAdj = ref({ ...store.imageAdjustments })
+
+function computeHistogram(img) {
+  // Histogram of original grayscale (pre-levels)
+  const tmp = document.createElement('canvas')
+  const w = img.naturalWidth || img.width
+  const h = img.naturalHeight || img.height
+  tmp.width = w
+  tmp.height = h
+  const tctx = tmp.getContext('2d', { willReadFrequently: true })
+  tctx.drawImage(img, 0, 0, w, h)
+  const id = tctx.getImageData(0, 0, w, h)
+  const hist = new Uint32Array(256)
+  for (let i = 0; i < id.data.length; i += 4) {
+    const r = id.data[i], g = id.data[i + 1], b = id.data[i + 2]
+    const v = Math.round(r * 0.299 + g * 0.587 + b * 0.114)
+    hist[v]++
+  }
+  histogram.value = hist
+}
+
+function drawHistogram() {
+  if (!histCanvas.value || !histogram.value) return
+  const c = histCanvas.value
+  const ctx = c.getContext('2d')
+
+  const W = 256
+  const H = 54
+  c.width = W
+  c.height = H
+
+  ctx.clearRect(0, 0, W, H)
+  ctx.fillStyle = '#FAFAFA'
+  ctx.fillRect(0, 0, W, H)
+
+  const hist = histogram.value
+  let max = 0
+  for (let i = 0; i < 256; i++) max = Math.max(max, hist[i])
+  const maxLog = Math.log1p(max || 1)
+
+  // Bars
+  ctx.fillStyle = '#DADADA'
+  for (let x = 0; x < 256; x++) {
+    const hLog = Math.log1p(hist[x])
+    const barH = Math.round((hLog / maxLog) * (H - 10))
+    ctx.fillRect(x, H - barH, 1, barH)
+  }
+
+  // Level handles
+  const bp = Math.max(0, Math.min(254, localAdj.value.blackPoint ?? 0))
+  const wp = Math.max(bp + 1, Math.min(255, localAdj.value.whitePoint ?? 255))
+
+  ctx.strokeStyle = '#2ECC8F'
+  ctx.lineWidth = 1
+  ctx.beginPath(); ctx.moveTo(bp + 0.5, 0); ctx.lineTo(bp + 0.5, H); ctx.stroke()
+  ctx.beginPath(); ctx.moveTo(wp + 0.5, 0); ctx.lineTo(wp + 0.5, H); ctx.stroke()
+
+  // Small triangles at bottom
+  ctx.fillStyle = '#2ECC8F'
+  const tri = (x) => {
+    ctx.beginPath()
+    ctx.moveTo(x + 0.5, H)
+    ctx.lineTo(x - 4, H - 6)
+    ctx.lineTo(x + 5, H - 6)
+    ctx.closePath()
+    ctx.fill()
+  }
+  tri(bp)
+  tri(wp)
+}
 
 function applyAdjustments() {
   if (!store.uploadedImage || !previewCanvas.value) return
-  const ctx = previewCanvas.value.getContext('2d')
+  const ctx = previewCanvas.value.getContext('2d', { willReadFrequently: true })
   const img = new Image()
   img.onload = () => {
     const maxW = 480
     const scale = Math.min(maxW / img.width, maxW / img.height, 1)
-    previewCanvas.value.width  = img.width  * scale
-    previewCanvas.value.height = img.height * scale
+    previewCanvas.value.width = Math.round(img.width * scale)
+    previewCanvas.value.height = Math.round(img.height * scale)
 
-    ctx.save()
     ctx.clearRect(0, 0, previewCanvas.value.width, previewCanvas.value.height)
-    ctx.translate(previewCanvas.value.width / 2, previewCanvas.value.height / 2)
-    ctx.rotate((localAdj.value.rotate * Math.PI) / 180)
-    ctx.filter = `brightness(${localAdj.value.brightness}%) contrast(${localAdj.value.contrast}%)`
-    ctx.drawImage(img, -previewCanvas.value.width / 2, -previewCanvas.value.height / 2,
-      previewCanvas.value.width, previewCanvas.value.height)
-    ctx.restore()
+    ctx.drawImage(img, 0, 0, previewCanvas.value.width, previewCanvas.value.height)
 
-    if (localAdj.value.threshold < 255) {
-      const d = ctx.getImageData(0, 0, previewCanvas.value.width, previewCanvas.value.height)
-      for (let i = 0; i < d.data.length; i += 4) {
-        const v = (d.data[i] + d.data[i+1] + d.data[i+2]) / 3 > localAdj.value.threshold ? 255 : 0
-        d.data[i] = d.data[i+1] = d.data[i+2] = v
-      }
-      ctx.putImageData(d, 0, 0)
+    // Levels on preview canvas
+    const bp = Math.max(0, Math.min(254, localAdj.value.blackPoint ?? 0))
+    const wp = Math.max(bp + 1, Math.min(255, localAdj.value.whitePoint ?? 255))
+    const denom = wp - bp
+
+    const d = ctx.getImageData(0, 0, previewCanvas.value.width, previewCanvas.value.height)
+    for (let i = 0; i < d.data.length; i += 4) {
+      const r = d.data[i], g = d.data[i + 1], b = d.data[i + 2]
+      const v = Math.round(r * 0.299 + g * 0.587 + b * 0.114)
+      let n = (v - bp) / denom
+      if (n < 0) n = 0
+      if (n > 1) n = 1
+      const o = Math.round(n * 255)
+      d.data[i] = d.data[i + 1] = d.data[i + 2] = o
     }
+
+    // Threshold preview (binary) for easier tuning
+    const thr = Math.max(0, Math.min(255, localAdj.value.threshold ?? 128))
+    for (let i = 0; i < d.data.length; i += 4) {
+      const v = d.data[i] > thr ? 255 : 0
+      d.data[i] = d.data[i + 1] = d.data[i + 2] = v
+    }
+
+    ctx.putImageData(d, 0, 0)
+
+    // histogram overlay updates with sliders
+    drawHistogram()
   }
   img.src = store.uploadedImage
 }
 
 watch(localAdj, () => {
+  // Keep levels sane
+  if (localAdj.value.blackPoint >= localAdj.value.whitePoint) {
+    localAdj.value.whitePoint = Math.min(255, localAdj.value.blackPoint + 1)
+  }
   store.updateAdjustments(localAdj.value)
   applyAdjustments()
 }, { deep: true })
 
-onMounted(() => { applyAdjustments() })
+watch(() => store.uploadedImage, (val) => {
+  if (!val) return
+  const img = new Image()
+  img.onload = () => {
+    computeHistogram(img)
+    drawHistogram()
+    applyAdjustments()
+  }
+  img.src = val
+})
+
+onMounted(() => {
+  if (store.uploadedImage) {
+    const img = new Image()
+    img.onload = () => {
+      computeHistogram(img)
+      drawHistogram()
+      applyAdjustments()
+    }
+    img.src = store.uploadedImage
+  } else {
+    applyAdjustments()
+  }
+})
 
 function resetAll() {
-  localAdj.value = { rotate: 0, brightness: 100, contrast: 100, threshold: 128, blur: 0, simplify: 1.5, smooth: 5 }
+  localAdj.value = { blackPoint: 0, whitePoint: 220, threshold: 128, blur: 5, detail: 64, smooth: 2 }
 }
 
 // Status: what to show at top of controls column
@@ -138,18 +248,30 @@ const hasResult = () => props.detectionSize && !props.detectionError
 
         <!-- Image adjustment sliders -->
         <div class="sliders">
-          <div class="slider-group">
-            <label>Rotate <span>{{ localAdj.rotate }}°</span></label>
-            <input type="range" v-model.number="localAdj.rotate" min="-180" max="180" />
+          <div class="levels-block">
+            <div class="levels-head">
+              <span class="levels-title">Levels</span>
+              <span class="levels-values">{{ localAdj.blackPoint }}–{{ localAdj.whitePoint }}</span>
+            </div>
+            <canvas ref="histCanvas" class="hist-canvas"></canvas>
           </div>
+
           <div class="slider-group">
-            <label>Brightness <span>{{ localAdj.brightness }}%</span></label>
-            <input type="range" v-model.number="localAdj.brightness" min="50" max="200" />
+            <label>
+              Shadows <span>{{ localAdj.blackPoint }}</span>
+              <small class="hint">raise to darken ink</small>
+            </label>
+            <input type="range" v-model.number="localAdj.blackPoint" min="0" max="254" step="1" />
           </div>
+
           <div class="slider-group">
-            <label>Contrast <span>{{ localAdj.contrast }}%</span></label>
-            <input type="range" v-model.number="localAdj.contrast" min="50" max="200" />
+            <label>
+              Highlights <span>{{ localAdj.whitePoint }}</span>
+              <small class="hint">lower to whiten paper</small>
+            </label>
+            <input type="range" v-model.number="localAdj.whitePoint" min="1" max="255" step="1" />
           </div>
+
           <div class="slider-group">
             <label>
               Threshold <span>{{ localAdj.threshold }}</span>
@@ -157,6 +279,7 @@ const hasResult = () => props.detectionSize && !props.detectionError
             </label>
             <input type="range" v-model.number="localAdj.threshold" min="0" max="255" />
           </div>
+
           <div class="slider-group">
             <label>
               Blur <span>{{ localAdj.blur }}</span>
@@ -166,31 +289,23 @@ const hasResult = () => props.detectionSize && !props.detectionError
           </div>
         </div>
 
-        <!-- Outline quality — collapsible -->
-        <div class="quality-section">
-          <button class="quality-toggle" @click="qualityOpen = !qualityOpen">
-            <span>Outline Quality</span>
-            <svg :class="['chevron', { open: qualityOpen }]" width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-          <div v-if="qualityOpen" class="quality-body">
-            <div class="slider-group">
-              <label>
-                Detail Level <span>{{ localAdj.simplify }}mm</span>
-                <small class="hint">↓ more points / ↑ fewer points</small>
-              </label>
-              <input type="range" v-model.number="localAdj.simplify" min="0.2" max="8" step="0.1" />
-            </div>
-            <div class="slider-group">
-              <label>
-                Smoothing <span>{{ localAdj.smooth }}/10</span>
-                <small class="hint">↑ softer bezier curves</small>
-              </label>
-              <input type="range" v-model.number="localAdj.smooth" min="0" max="10" step="1" />
-            </div>
-            <p class="quality-note">Changes take effect on next detection.</p>
+        <!-- Outline quality — always visible -->
+        <div class="quality-body">
+          <div class="slider-group">
+            <label>
+              Detail <span>{{ localAdj.detail }}/100</span>
+              <small class="hint">← less / more →</small>
+            </label>
+            <input type="range" v-model.number="localAdj.detail" min="0" max="100" step="1" />
           </div>
+          <div class="slider-group">
+            <label>
+              Smoothing <span>{{ localAdj.smooth }}/10</span>
+              <small class="hint">↑ softer bezier curves</small>
+            </label>
+            <input type="range" v-model.number="localAdj.smooth" min="0" max="10" step="1" />
+          </div>
+          <p class="quality-note">Changes take effect on next detection.</p>
         </div>
 
         <!-- Actions -->
@@ -391,32 +506,47 @@ const hasResult = () => props.detectionSize && !props.detectionError
 
 input[type=range] { width: 100%; }
 
-/* Quality section */
-.quality-section {
-  border-top: 1px solid #F0F0F0;
-  padding-top: 10px;
+/* Levels */
+.levels-block {
+  padding: 10px 10px 8px;
+  border: 1px solid #EFEFEF;
+  border-radius: 12px;
+  background: #FCFCFC;
 }
 
-.quality-toggle {
+.levels-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  width: 100%;
+  margin-bottom: 8px;
+}
+
+.levels-title {
   font-size: 12px;
-  font-weight: 600;
-  color: #888;
+  font-weight: 700;
+  color: #666;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  padding: 4px 0;
-  transition: color 200ms ease;
 }
 
-.quality-toggle:hover { color: #2ECC8F; }
+.levels-values {
+  font-size: 12px;
+  font-weight: 600;
+  color: #2ECC8F;
+}
 
-.chevron { transition: transform 200ms ease; flex-shrink: 0; }
-.chevron.open { transform: rotate(180deg); }
+.hist-canvas {
+  width: 100%;
+  height: 54px;
+  display: block;
+  border-radius: 10px;
+  border: 1px solid #EBEBEB;
+  background: #FAFAFA;
+}
 
+/* Outline quality */
 .quality-body {
+  border-top: 1px solid #F0F0F0;
   padding-top: 12px;
   display: flex;
   flex-direction: column;
