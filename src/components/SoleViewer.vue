@@ -77,8 +77,17 @@ function buildAll(params, svgPathStr) {
     const size = new THREE.Vector2(); box.getSize(size)
     const sc = 10 / Math.max(size.x, size.y)
     const ctr = new THREE.Vector2(); box.getCenter(ctr)
-    const tx = x => (x - ctr.x) * sc
-    const ty = y => (y - ctr.y) * sc
+    // Pre-shrink the shape so that after the bevel is added, the XY footprint
+    // matches the original detected outline. The normalised shape fits in a
+    // ≈10-unit box (max dim = 10), so half-extent ≈ 5.
+    // bevel expands each edge by `bevel` units → compensate by scaling down.
+    const bevelForComp = params.edgeRoundness * 0.05
+    const halfExtent = 5
+    const bevelComp  = bevelForComp > 0 ? halfExtent / (halfExtent + bevelForComp) : 1
+    const scComp     = sc * bevelComp
+
+    const tx = x => (x - ctr.x) * scComp
+    const ty = y => (y - ctr.y) * scComp
 
     shape = new THREE.Shape()
     first = true
@@ -157,7 +166,7 @@ function buildAll(params, svgPathStr) {
     const cy     = (bb.min.y + bb.max.y) / 2
     const halfW  = (bb.max.x - bb.min.x) / 2
     const halfH  = (bb.max.y - bb.min.y) / 2
-    const rimWall = 0.35  // wall thickness in display units (~2–3 mm physical)
+    const rimWall = Math.max(0.04, (params.rimWidth ?? 4) * 0.035)
 
     const outerPts = shape.getPoints(96)
     const rimShape = new THREE.Shape(outerPts)

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useSoleStore } from '../stores/soleStore'
 
 const props = defineProps({
@@ -17,6 +17,7 @@ const store = useSoleStore()
 const previewCanvas = ref(null)
 const histCanvas = ref(null)
 const histogram = ref(null) // Uint32Array[256]
+const dragging = ref(null)  // 'shadows' | 'highlights' | 'threshold'
 const localAdj = ref({ ...store.imageAdjustments })
 
 function computeHistogram(img) {
@@ -44,49 +45,139 @@ function drawHistogram() {
   const ctx = c.getContext('2d')
 
   const W = 256
-  const H = 54
+  const H = 74
   c.width = W
   c.height = H
+  const handleH = 20  // handle zone height at the bottom
 
   ctx.clearRect(0, 0, W, H)
-  ctx.fillStyle = '#FAFAFA'
-  ctx.fillRect(0, 0, W, H)
+
+  // Histogram area background
+  ctx.fillStyle = '#F5F5F5'
+  ctx.fillRect(0, 0, W, H - handleH)
+
+  // Handle zone background
+  ctx.fillStyle = '#EBEBEB'
+  ctx.fillRect(0, H - handleH, W, handleH)
 
   const hist = histogram.value
   let max = 0
   for (let i = 0; i < 256; i++) max = Math.max(max, hist[i])
   const maxLog = Math.log1p(max || 1)
+  const barArea = H - handleH - 4
 
-  // Bars
-  ctx.fillStyle = '#DADADA'
+  // Bars (greyscale tinted)
   for (let x = 0; x < 256; x++) {
-    const hLog = Math.log1p(hist[x])
-    const barH = Math.round((hLog / maxLog) * (H - 10))
-    ctx.fillRect(x, H - barH, 1, barH)
+    const barH = Math.round((Math.log1p(hist[x]) / maxLog) * barArea)
+    if (barH < 1) continue
+    ctx.fillStyle = `rgb(${x},${x},${x})`
+    ctx.fillRect(x, H - handleH - barH, 1, barH)
   }
 
-  // Level handles
-  const bp = Math.max(0, Math.min(254, localAdj.value.blackPoint ?? 0))
-  const wp = Math.max(bp + 1, Math.min(255, localAdj.value.whitePoint ?? 255))
+  const bp  = Math.max(0, Math.min(254, localAdj.value.blackPoint  ?? 0))
+  const wp  = Math.max(bp + 1, Math.min(255, localAdj.value.whitePoint ?? 255))
+  const thr = Math.max(0, Math.min(255, localAdj.value.threshold ?? 128))
 
-  ctx.strokeStyle = '#2ECC8F'
-  ctx.lineWidth = 1
-  ctx.beginPath(); ctx.moveTo(bp + 0.5, 0); ctx.lineTo(bp + 0.5, H); ctx.stroke()
-  ctx.beginPath(); ctx.moveTo(wp + 0.5, 0); ctx.lineTo(wp + 0.5, H); ctx.stroke()
+  // Clipped-out shading
+  ctx.fillStyle = 'rgba(0,0,0,0.18)'
+  ctx.fillRect(0, 0, bp, H - handleH)
+  ctx.fillStyle = 'rgba(230,230,230,0.45)'
+  ctx.fillRect(wp, 0, W - wp, H - handleH)
 
-  // Small triangles at bottom
-  ctx.fillStyle = '#2ECC8F'
-  const tri = (x) => {
+  const drawHandle = (val, color, label) => {
+    const x = val + 0.5
+
+    // Vertical line
+    ctx.strokeStyle = color
+    ctx.lineWidth = 1.5
     ctx.beginPath()
-    ctx.moveTo(x + 0.5, H)
-    ctx.lineTo(x - 4, H - 6)
-    ctx.lineTo(x + 5, H - 6)
+    ctx.moveTo(x, 0)
+    ctx.lineTo(x, H - handleH + 2)
+    ctx.stroke()
+
+    // Triangle marker in handle zone
+    ctx.fillStyle = color
+    ctx.beginPath()
+    ctx.moveTo(x, H - handleH + 2)
+    ctx.lineTo(x - 6, H - handleH + 13)
+    ctx.lineTo(x + 7, H - handleH + 13)
     ctx.closePath()
     ctx.fill()
+
+    // Label in triangle
+    ctx.fillStyle = label === 'H' ? '#555' : '#fff'
+    ctx.font = 'bold 7.5px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(label, x, H - handleH + 8)
   }
-  tri(bp)
-  tri(wp)
+
+  drawHandle(bp,  '#2ECC8F', 'S')
+  drawHandle(wp,  '#C8C8C8', 'H')
+  drawHandle(thr, '#E87A3A', 'T')
 }
+
+// ── Histogram drag interaction ────────────────────────────────────────────────
+
+function pickHandle(xPx, canvasW) {
+  const bp  = (localAdj.value.blackPoint  ?? 0)   * (canvasW / 255)
+  const wp  = (localAdj.value.whitePoint  ?? 255)  * (canvasW / 255)
+  const thr = (localAdj.value.threshold   ?? 128)  * (canvasW / 255)
+  const handles = { shadows: bp, highlights: wp, threshold: thr }
+  let best = null, bestDist = 22 // px tap radius
+  for (const [name, hx] of Object.entries(handles)) {
+    const d = Math.abs(xPx - hx)
+    if (d < bestDist) { bestDist = d; best = name }
+  }
+  return best
+}
+
+function onHistPointerDown(e) {
+  e.preventDefault()
+  const rect = histCanvas.value.getBoundingClientRect()
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX
+  const xPx = clientX - rect.left
+  const handle = pickHandle(xPx, rect.width)
+  if (handle) {
+    dragging.value = handle
+    window.addEventListener('mousemove', onHistDrag, { passive: false })
+    window.addEventListener('touchmove', onHistDrag, { passive: false })
+    window.addEventListener('mouseup',   onHistDragEnd)
+    window.addEventListener('touchend',  onHistDragEnd)
+  }
+}
+
+function onHistDrag(e) {
+  if (!dragging.value || !histCanvas.value) return
+  e.preventDefault()
+  const rect = histCanvas.value.getBoundingClientRect()
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX
+  const x = Math.max(0, Math.min(rect.width, clientX - rect.left))
+  const val = Math.round((x / rect.width) * 255)
+  const adj = { ...localAdj.value }
+  if (dragging.value === 'shadows') {
+    adj.blackPoint = Math.max(0, Math.min(254, val))
+    if (adj.blackPoint >= adj.whitePoint) adj.whitePoint = Math.min(255, adj.blackPoint + 1)
+  } else if (dragging.value === 'highlights') {
+    adj.whitePoint = Math.max(1, Math.min(255, val))
+    if (adj.whitePoint <= adj.blackPoint) adj.blackPoint = Math.max(0, adj.whitePoint - 1)
+  } else if (dragging.value === 'threshold') {
+    adj.threshold = Math.max(0, Math.min(255, val))
+  }
+  localAdj.value = adj
+}
+
+function onHistDragEnd() {
+  dragging.value = null
+  window.removeEventListener('mousemove', onHistDrag)
+  window.removeEventListener('touchmove', onHistDrag)
+  window.removeEventListener('mouseup',   onHistDragEnd)
+  window.removeEventListener('touchend',  onHistDragEnd)
+}
+
+onUnmounted(() => {
+  onHistDragEnd() // clean up any dangling listeners
+})
 
 function applyAdjustments() {
   if (!store.uploadedImage || !previewCanvas.value) return
@@ -251,33 +342,19 @@ const hasResult = () => props.detectionSize && !props.detectionError
           <div class="levels-block">
             <div class="levels-head">
               <span class="levels-title">Levels</span>
-              <span class="levels-values">{{ localAdj.blackPoint }}–{{ localAdj.whitePoint }}</span>
+              <span class="levels-legend">
+                <span class="leg-s">S</span> shadows &nbsp;
+                <span class="leg-t">T</span> threshold &nbsp;
+                <span class="leg-h">H</span> highlights
+              </span>
             </div>
-            <canvas ref="histCanvas" class="hist-canvas"></canvas>
-          </div>
-
-          <div class="slider-group">
-            <label>
-              Shadows <span>{{ localAdj.blackPoint }}</span>
-              <small class="hint">raise to darken ink</small>
-            </label>
-            <input type="range" v-model.number="localAdj.blackPoint" min="0" max="254" step="1" />
-          </div>
-
-          <div class="slider-group">
-            <label>
-              Highlights <span>{{ localAdj.whitePoint }}</span>
-              <small class="hint">lower to whiten paper</small>
-            </label>
-            <input type="range" v-model.number="localAdj.whitePoint" min="1" max="255" step="1" />
-          </div>
-
-          <div class="slider-group">
-            <label>
-              Threshold <span>{{ localAdj.threshold }}</span>
-              <small class="hint">outline darkness cutoff</small>
-            </label>
-            <input type="range" v-model.number="localAdj.threshold" min="0" max="255" />
+            <canvas
+              ref="histCanvas"
+              class="hist-canvas"
+              @mousedown="onHistPointerDown"
+              @touchstart.prevent="onHistPointerDown"
+            ></canvas>
+            <p class="hist-hint">Drag handles to adjust · S and H set the tonal range · T sets outline detection cutoff</p>
           </div>
 
           <div class="slider-group">
@@ -519,6 +596,8 @@ input[type=range] { width: 100%; }
   align-items: baseline;
   justify-content: space-between;
   margin-bottom: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .levels-title {
@@ -527,21 +606,37 @@ input[type=range] { width: 100%; }
   color: #666;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  flex-shrink: 0;
 }
 
-.levels-values {
-  font-size: 12px;
-  font-weight: 600;
-  color: #2ECC8F;
+.levels-legend {
+  font-size: 10px;
+  color: #aaa;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
 }
+
+.leg-s { font-weight: 700; color: #2ECC8F; }
+.leg-h { font-weight: 700; color: #999; }
+.leg-t { font-weight: 700; color: #E87A3A; }
 
 .hist-canvas {
   width: 100%;
-  height: 54px;
+  height: 74px;
   display: block;
   border-radius: 10px;
   border: 1px solid #EBEBEB;
-  background: #FAFAFA;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.hist-hint {
+  font-size: 10px;
+  color: #ccc;
+  margin-top: 5px;
+  line-height: 1.4;
 }
 
 /* Outline quality */

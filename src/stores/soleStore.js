@@ -16,6 +16,7 @@ export const useSoleStore = defineStore('sole', {
       edgeRoundness: 4,
       heelLift:      5,
       rimHeight:     0,
+      rimWidth:      4,
     },
     previewReady: false,
     exportReady: false,
@@ -46,7 +47,7 @@ export const useSoleStore = defineStore('sole', {
     reset() {
       this.uploadedImage = null
       this.imageAdjustments = { blackPoint: 0, whitePoint: 220, threshold: 128, blur: 5, detail: 64, smooth: 2 }
-      this.params = { thickness: 12, edgeRoundness: 4, heelLift: 5, rimHeight: 0 }
+      this.params = { thickness: 12, edgeRoundness: 4, heelLift: 5, rimHeight: 0, rimWidth: 4 }
       this.previewReady = false
       this.exportReady = false
       this.detectedSvgPath = null

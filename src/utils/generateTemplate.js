@@ -23,10 +23,28 @@ export function downloadTemplate() {
   const ct = Math.cos(theta)
   const st = Math.sin(theta)
 
+  // Draw an individually-rotated square centered at (cx+rx, cy+ry)
   const drawTip = (dx, dy) => {
+    // Position of this tip's center (arm rotation)
     const rx = dx * ct - dy * st
     const ry = dx * st + dy * ct
-    doc.rect(cx + rx - tipSize / 2, cy + ry - tipSize / 2, tipSize, tipSize, 'F')
+    const px = cx + rx
+    const py = cy + ry
+
+    // Individual square is also rotated by the same theta
+    const half = tipSize / 2
+    const corners = [[-half, -half], [half, -half], [half, half], [-half, half]]
+    const pts = corners.map(([ox, oy]) => [
+      px + ox * ct - oy * st,
+      py + ox * st + oy * ct,
+    ])
+
+    doc.moveTo(pts[0][0], pts[0][1])
+    doc.lineTo(pts[1][0], pts[1][1])
+    doc.lineTo(pts[2][0], pts[2][1])
+    doc.lineTo(pts[3][0], pts[3][1])
+    doc.close()
+    doc.fill()
   }
 
   // N/S/E/W (relative to unrotated axes)

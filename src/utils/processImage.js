@@ -140,7 +140,7 @@ export async function processImage(imageElement, options = {}) {
     // Size range: 10×10mm tip squares at typical photo resolution
     // Allow generous range (500–80000 px²) to cover phone cameras at various distances
     if (c.area < 200 || c.area > 80000) continue
-    if (solidity < 0.70) continue          // Must be fairly solid (not an outline or ring)
+    if (solidity < 0.42) continue          // Rotated squares at 37.7° have bbox solidity ~0.50
     if (aspect < 0.5 || aspect > 2.0) continue  // Roughly square
 
     // Must be SOLID (not hollow): sample center pixel

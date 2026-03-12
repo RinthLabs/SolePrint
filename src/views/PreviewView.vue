@@ -18,10 +18,11 @@ function showToast(msg, type = 'success') {
 
 // Sole parameter sliders
 const sliders = [
-  { key: 'thickness',     label: 'Thickness',    min: 1,  max: 18, unit: 'mm', tip: 'Overall sole depth from top to bottom.' },
-  { key: 'edgeRoundness', label: 'Edge Roundness', min: 0, max: 10, unit: '',   tip: 'Rounds the bottom (ground-facing) edges only. Top stays flat for gluing.' },
-  { key: 'heelLift',      label: 'Heel Lift',    min: 0,  max: 15, unit: 'mm', tip: 'Tapers the sole so the heel end is thicker than the toe end.' },
-  { key: 'rimHeight',     label: 'Raised Rim',   min: 0,  max: 12, unit: 'mm', tip: 'Adds a thin outer lip around the top edge, cupping the bottom of the shoe.' },
+  { key: 'thickness',     label: 'Thickness',      min: 1,  max: 18, unit: 'mm', tip: 'Overall sole depth from top to bottom.' },
+  { key: 'edgeRoundness', label: 'Edge Roundness',  min: 0,  max: 10, unit: '',   tip: 'Rounds the bottom (ground-facing) edges only. Top stays flat for gluing.' },
+  { key: 'heelLift',      label: 'Heel Lift',       min: 0,  max: 15, unit: 'mm', tip: 'Tapers the sole so the heel end is thicker than the toe end.' },
+  { key: 'rimHeight',     label: 'Raised Rim',      min: 0,  max: 12, unit: 'mm', tip: 'Adds a thin outer lip around the top edge, cupping the bottom of the shoe.' },
+  { key: 'rimWidth',      label: 'Rim Thickness',   min: 1,  max: 10, unit: '',   tip: 'How wide the raised rim wall is.' },
 ]
 
 function updateParam(key, val) {
@@ -40,15 +41,6 @@ function doExportSTL() {
 function doExportOBJ() {
   viewer.value?.exportOBJ()
   showToast('OBJ exported')
-}
-
-const copied = ref(false)
-function copyLink() {
-  navigator.clipboard.writeText(window.location.href).then(() => {
-    copied.value = true
-    showToast('Link copied to clipboard!')
-    setTimeout(() => { copied.value = false }, 2000)
-  })
 }
 
 function startOver() {
@@ -158,19 +150,6 @@ function startOver() {
               </button>
             </div>
             <p class="export-hint">Open in PrusaSlicer, Cura, or Bambu Studio to slice and print.</p>
-          </div>
-
-          <div class="section">
-            <h3>Share</h3>
-            <div class="share-buttons">
-              <button :class="['btn-ghost', { copied }]" @click="copyLink">
-                {{ copied ? '✓ Copied!' : 'Copy Link' }}
-              </button>
-              <button class="btn-ghost" @click="() => {
-                const text = encodeURIComponent('I just designed a custom sole with SolePrint!')
-                window.open('https://twitter.com/intent/tweet?text=' + text, '_blank')
-              }">Share on X</button>
-            </div>
           </div>
 
         </div>
