@@ -37,6 +37,51 @@ function computeHistogram(img) {
     hist[v]++
   }
   histogram.value = hist
+  return hist
+}
+
+/**
+ * Auto-detect optimal levels and threshold from histogram.
+ * - blackPoint: 0.5th percentile (clip isolated dark specks)
+ * - whitePoint: 99th percentile from the bright end (clip blown highlights)
+ * - threshold: Otsu's method (maximises inter-class variance — great for ink-on-paper)
+ */
+function autoLevels(hist) {
+  const total = hist.reduce((s, v) => s + v, 0)
+  if (total === 0) return { blackPoint: 0, whitePoint: 220, threshold: 128 }
+
+  // Black point: skip bottom 0.5%
+  let cum = 0
+  let blackPoint = 0
+  for (let i = 0; i < 256; i++) {
+    cum += hist[i]
+    if (cum / total >= 0.005) { blackPoint = Math.max(0, i - 1); break }
+  }
+
+  // White point: skip top 1%
+  cum = 0
+  let whitePoint = 255
+  for (let i = 255; i >= 0; i--) {
+    cum += hist[i]
+    if (cum / total >= 0.01) { whitePoint = Math.min(255, i + 1); break }
+  }
+
+  // Otsu threshold (bimodal ink-on-paper works very well)
+  const sum = hist.reduce((s, v, i) => s + i * v, 0)
+  let sumB = 0, wB = 0, bestVar = 0, threshold = 128
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t]
+    if (wB === 0) continue
+    const wF = total - wB
+    if (wF === 0) break
+    sumB += t * hist[t]
+    const mB = sumB / wB
+    const mF = (sum - sumB) / wF
+    const v = wB * wF * (mB - mF) ** 2
+    if (v > bestVar) { bestVar = v; threshold = t }
+  }
+
+  return { blackPoint, whitePoint, threshold }
 }
 
 function drawHistogram() {
@@ -232,29 +277,31 @@ watch(localAdj, () => {
   applyAdjustments()
 }, { deep: true })
 
-watch(() => store.uploadedImage, (val) => {
-  if (!val) return
+function loadImageAndAutoLevel(src) {
   const img = new Image()
   img.onload = () => {
-    computeHistogram(img)
+    const hist = computeHistogram(img)
+    const auto = autoLevels(hist)
+    // Apply auto-detected levels — update localAdj without triggering a store write loop
+    localAdj.value = {
+      ...localAdj.value,
+      blackPoint: auto.blackPoint,
+      whitePoint: auto.whitePoint,
+      threshold:  auto.threshold,
+    }
     drawHistogram()
     applyAdjustments()
   }
-  img.src = val
+  img.src = src
+}
+
+watch(() => store.uploadedImage, (val) => {
+  if (val) loadImageAndAutoLevel(val)
 })
 
 onMounted(() => {
-  if (store.uploadedImage) {
-    const img = new Image()
-    img.onload = () => {
-      computeHistogram(img)
-      drawHistogram()
-      applyAdjustments()
-    }
-    img.src = store.uploadedImage
-  } else {
-    applyAdjustments()
-  }
+  if (store.uploadedImage) loadImageAndAutoLevel(store.uploadedImage)
+  else applyAdjustments()
 })
 
 function resetAll() {

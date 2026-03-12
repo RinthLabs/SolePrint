@@ -77,17 +77,9 @@ function buildAll(params, svgPathStr) {
     const size = new THREE.Vector2(); box.getSize(size)
     const sc = 10 / Math.max(size.x, size.y)
     const ctr = new THREE.Vector2(); box.getCenter(ctr)
-    // Pre-shrink the shape so that after the bevel is added, the XY footprint
-    // matches the original detected outline. The normalised shape fits in a
-    // ≈10-unit box (max dim = 10), so half-extent ≈ 5.
-    // bevel expands each edge by `bevel` units → compensate by scaling down.
-    const bevelForComp = params.edgeRoundness * 0.05
-    const halfExtent = 5
-    const bevelComp  = bevelForComp > 0 ? halfExtent / (halfExtent + bevelForComp) : 1
-    const scComp     = sc * bevelComp
 
-    const tx = x => (x - ctr.x) * scComp
-    const ty = y => (y - ctr.y) * scComp
+    const tx = x => (x - ctr.x) * sc
+    const ty = y => (y - ctr.y) * sc
 
     shape = new THREE.Shape()
     first = true
@@ -102,15 +94,15 @@ function buildAll(params, svgPathStr) {
   }
 
   const hasPath     = !!svgPathStr
-  const bevel       = params.edgeRoundness * (hasPath ? 0.05 : 0.08)
-  const bevelThick  = params.edgeRoundness * (hasPath ? 0.03 : 0.06)
+  const bevelThick  = params.edgeRoundness * (hasPath ? 0.04 : 0.06)
   const depth       = params.thickness * (hasPath ? 0.15 : 0.1)
 
   const geo = new THREE.ExtrudeGeometry(shape, {
     depth,
     bevelEnabled:   params.edgeRoundness > 0,
-    bevelSegments:  4,
-    bevelSize:      bevel,
+    bevelSegments:  6,
+    // bevelSize near-zero → no XY expansion; bevelThickness rounds only the bottom edge in Z
+    bevelSize:      hasPath ? 0.001 : params.edgeRoundness * 0.08,
     bevelThickness: bevelThick,
     curveSegments:  32,
   })
